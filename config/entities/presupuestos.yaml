@@ -1,0 +1,228 @@
+entity: quotes
+enabled: true
+
+access:
+  mdb: Presup.mdb
+  table: Presupuestos
+  pk: Presupuesto_Numero
+  pk_type: long
+
+postgres:
+  schema: sales
+  table: quotes
+  pk: quote_id
+  legacy_code_column: quote_number
+
+detection:
+  access_to_pg: timestamp
+  timestamp_column: Fecha_Modificado
+  pg_to_access: trigger
+  full_scan_interval: 5m
+
+fields:
+  - access: Presupuesto_Numero
+    pg: quote_number
+    type: int
+
+  - access: Presupuesto_Fecha
+    pg: quote_date
+    type: date
+
+  - access: Presupuesto_Estado
+    pg: quote_status
+    type: int
+
+  - access: Cliente_Codigo
+    pg: quote_customer_id
+    type: int
+    fk_resolve:
+      entity: customers
+
+  - access: Cliente_Codigo
+    pg: quote_customerName
+    type: string
+
+  - access: SubCliente_codigo
+    pg: quote_subCustomer
+    type: string
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Presupuesto_Trabajo
+    pg: quote_generalDescription
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_Total
+    pg: quote_total
+    type: decimal
+
+  - access: Presupuesto_Neto
+    pg: quote_net
+    type: decimal
+
+  - access: Presupuesto_Descuento
+    pg: quote_discount
+    type: decimal
+
+  - access: Presupuesto_Moneda
+    pg: quote_currency_id
+    type: int
+
+  - access: Presupuesto_Moneda
+    pg: quote_currencyName
+    type: string
+
+  - access: Presupuesto_Paridad
+    pg: quote_parity
+    type: decimal
+
+  - access: Presupuesto_Condiciones
+    pg: quote_paymentCondition
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_CtaCteDias
+    pg: quote_accountDays
+    type: int
+    nullable: true
+
+  - access: Presupuesto_Banco
+    pg: quote_bank
+    type: string
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Presupuesto_Validez
+    pg: quote_validity
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_PlazoEntrega
+    pg: quote_deliveryTerm
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_Entrega
+    pg: quote_deliveryPlace
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_Tiene_Cotizacion
+    pg: quote_hasQuotation
+    type: access_bool
+
+  - access: Presupuesto_Documentacion
+    pg: quote_documentation
+    type: int
+
+  - access: Presupuesto_Atencion
+    pg: quote_attention
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_Nota
+    pg: quote_note
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_MotivoRechazo
+    pg: quote_rejectionReason
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_FechaEnvio
+    pg: quote_sentAt
+    type: date
+    nullable: true
+
+  - access: Presupuesto_FechaAceptacionPedido
+    pg: quote_acceptedAt
+    type: date
+    nullable: true
+
+  - access: Fecha_Modificado
+    pg: quote_createdAt
+    type: date
+
+children:
+  - entity: quoteItems
+    access:
+      table: Items
+      pk: Item_Numero
+      parent_fk: Presupuesto_Numero
+    postgres:
+      table: quoteItems
+      pk: quoteItem_id
+      parent_fk: quoteItem_quote_id
+      parent_match: quote_number
+    fields:
+      - access: Item_Numero
+        pg: quoteItem_number
+        type: int
+
+      - access: Item_Descripcion
+        pg: quoteItem_description
+        type: string
+
+      - access: Actividad_Codigo
+        pg: quoteItem_activityCode
+        type: int
+
+      - access: Item_Cantidad
+        pg: quoteItem_quantity
+        type: decimal
+
+      - access: Item_Precio
+        pg: quoteItem_price
+        type: decimal
+
+      - access: Item_PrecioReal
+        pg: quoteItem_cost
+        type: decimal
+
+      - access: Item_CantConfirmada
+        pg: quoteItem_confirmedQuantity
+        type: decimal
+
+      - access: Item_CantEntregada
+        pg: quoteItem_deliveredQuantity
+        type: decimal
+
+      - access: Item_CantFacturada
+        pg: quoteItem_invoicedQuantity
+        type: decimal
+
+      - access: Item_Facturado
+        pg: quoteItem_isInvoiced
+        type: access_bool
+
+      - access: Item_CtaContable
+        pg: quoteItem_accountingAccount
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Item_OC
+        pg: quoteItem_purchaseOrder
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Item_OCFecha
+        pg: quoteItem_purchaseOrderDate
+        type: date
+        nullable: true
+
+sync:
+  interval: 3s
+  batch_size: 20
+  direction: both

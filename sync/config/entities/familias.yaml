@@ -1,0 +1,33 @@
+entity: familias
+enabled: true
+
+access:
+  mdb: Articulo.mdb
+  table: Familias
+  pk: Familia_Codigo
+  pk_type: byte
+
+postgres:
+  schema: articulos
+  table: familias
+  pk: familia_id
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 5m
+
+fields:
+  - access: Familia_Codigo
+    pg: familia_id
+    type: int
+
+  - access: Familia_Descripcion
+    pg: familia_descripcion
+    type: string
+    transform: trim
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

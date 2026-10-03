@@ -1,0 +1,13 @@
+# Binarios compilados
+*.exe
+*.exe~
+*.test
+*.out
+
+# Logs y temporales
+*.log
+tmp/
+
+# IDE
+.vscode/
+.idea/

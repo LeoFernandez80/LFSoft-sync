@@ -1,0 +1,4 @@
+﻿sync_port: 9090
+pg_dsn: "postgres://postgres:lfsoft@localhost:5432/lfsoft_hidramic?sslmode=disable"
+mdb_base_path: "C:\\PSB\\Hidramic"
+entities_dir: "C:\\Apps\\LFSoft\\tools\\sync\\config\\entities"

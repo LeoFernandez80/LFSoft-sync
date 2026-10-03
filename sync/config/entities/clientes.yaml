@@ -1,0 +1,368 @@
+entity: customers
+enabled: true
+
+access:
+  mdb: Clientes.mdb
+  table: Clientes
+  pk: Cliente_Codigo
+  pk_type: long
+
+postgres:
+  schema: sales
+  table: customers
+  pk: customer_id
+  legacy_code_column: customer_legacyCode
+
+detection:
+  access_to_pg: timestamp
+  timestamp_column: Cliente_FechaActualizado
+  timestamp_time_column: Cliente_HoraActualizado
+  pg_to_access: trigger
+  full_scan_interval: 5m
+
+fields:
+  - access: Cliente_Codigo
+    pg: customer_legacyCode
+    type: int
+
+  - access: Cliente_RazonSocial
+    pg: customer_businessName
+    type: string
+    transform: trim
+
+  - access: Cliente_Activo
+    pg: customer_isActive
+    type: access_bool
+
+  - access: Cliente_Direccion
+    pg: customer_address
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_CUIT
+    pg: customer_taxId
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_IDImpositivo
+    pg: customer_taxIdAlternative
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Pais_Codigo
+    pg: customer_country_id
+    type: int
+    nullable: true
+
+  - access: Codigo_Postal
+    pg: customer_postalCode
+    type: string
+    nullable: true
+    null_sentinels: ["", "ND"]
+
+  - access: Localidad_Codigo
+    pg: customer_locality_id
+    type: int
+    nullable: true
+
+  - access: Cliente_Telefono
+    pg: customer_phone
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax
+    pg: customer_fax
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono1
+    pg: customer_phone1
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono2
+    pg: customer_phone2
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono3
+    pg: customer_phone3
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono4
+    pg: customer_phone4
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono5
+    pg: customer_phone5
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax1
+    pg: customer_fax1
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax2
+    pg: customer_fax2
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax3
+    pg: customer_fax3
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax4
+    pg: customer_fax4
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax5
+    pg: customer_fax5
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PaginaWEB
+    pg: customer_webPage
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_EmailGeneral
+    pg: customer_emailGeneral
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_FechaActualizado
+    pg: customer_updatedAt
+    type: access_datetime
+    time_source: Cliente_HoraActualizado
+    nullable: true
+
+  - access: Cliente_UsuarioActualizado
+    pg: customer_updatedBy
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Categoria
+    pg: customer_category_id
+    type: int
+    nullable: true
+
+  - access: Cliente_Referencia1
+    pg: customer_reference1_id
+    type: int
+    nullable: true
+
+  - access: Cliente_Referencia2
+    pg: customer_reference2
+    type: int
+    nullable: true
+
+  - access: Cliente_Precio
+    pg: customer_priceType
+    type: int
+    nullable: true
+
+  - access: Cliente_PosIVA
+    pg: customer_vatPosition
+    type: int
+    nullable: true
+
+  - access: Cliente_CondVta
+    pg: customer_saleCondition
+    type: int
+    nullable: true
+
+  - access: Cliente_CtaCteDias
+    pg: customer_accountDays
+    type: int
+    nullable: true
+
+  - access: Cliente_MonedaCredito
+    pg: customer_creditCurrency
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Credito
+    pg: customer_creditLimit
+    type: decimal
+    nullable: true
+
+  - access: Cliente_Descuento
+    pg: customer_discount
+    type: decimal
+    nullable: true
+
+  - access: VendedorExterno_Codigo
+    pg: customer_externalSalesperson_id
+    type: int
+    nullable: true
+
+  - access: Cliente_Observacion
+    pg: customer_observation
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_ObservacionesComerciales
+    pg: customer_commercialObservation
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_CondicionIIBB
+    pg: customer_iibbCondition
+    type: int
+    nullable: true
+
+  - access: Cliente_TipoContribuyenteIIBB
+    pg: customer_iibbTaxpayerType
+    type: int
+    nullable: true
+
+  - access: Cliente_NroIIBB
+    pg: customer_iibbNumber
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PercepcionIIBBMotivo
+    pg: customer_iibbPerceptionReason
+    type: int
+    nullable: true
+
+  - access: Cliente_PercepcionIIBBPorcentaje
+    pg: customer_iibbPerceptionPercentage
+    type: decimal
+    nullable: true
+
+  - access: Cliente_NotaPercepcionIIBB
+    pg: customer_iibbPerceptionNote
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_CoefUnifPciaBsAs
+    pg: customer_unifiedCoefficientPBA
+    type: decimal
+    nullable: true
+
+  - access: Cliente_PagoProveedoresModalidad
+    pg: customer_supplierPaymentMode
+    type: int
+    nullable: true
+
+  - access: Cliente_PagoProveedoresEmail
+    pg: customer_supplierPaymentEmail
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresHorarios
+    pg: customer_supplierPaymentSchedule
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresTelefonos
+    pg: customer_supplierPaymentPhones
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresBanco
+    pg: customer_supplierPaymentBank_id
+    type: int
+    nullable: true
+
+  - access: Cliente_PagoProveedoresDetalleOtros
+    pg: customer_supplierPaymentOtherDetail
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresObservaciones
+    pg: customer_supplierPaymentObservation
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresDepositoCuenta
+    pg: customer_supplierPaymentDepositAccount
+    type: int
+    nullable: true
+
+  - access: Cliente_PagoProveedoresEnviaCheque
+    pg: customer_supplierPaymentSendsCheck
+    type: int
+    nullable: true
+
+  - access: Cliente_PagoProveedoresWebPagos
+    pg: customer_supplierPaymentWebPortal
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresAvisoDePago
+    pg: customer_supplierPaymentNotice
+    type: access_bool
+
+  - access: Cliente_TrabajoOC
+    pg: customer_worksWithPurchaseOrder
+    type: access_bool
+
+  - access: Cliente_RespetarOC
+    pg: customer_respectPurchaseOrder
+    type: access_bool
+
+  - access: Cliente_FacturarDolarDivisa
+    pg: customer_invoiceInDollarDivisa
+    type: access_bool
+
+  - access: Cliente_OpcionTransferencia
+    pg: customer_transferOption
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_DEBE
+    pg: customer_debit
+    type: decimal
+    nullable: true
+
+  - access: Cliente_HABER
+    pg: customer_credit
+    type: decimal
+    nullable: true
+
+  - access: Cliente_Pendiente
+    pg: customer_pending
+    type: decimal
+    nullable: true
+
+sync:
+  interval: 3s
+  batch_size: 100
+  direction: both

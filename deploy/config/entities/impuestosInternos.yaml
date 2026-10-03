@@ -1,0 +1,37 @@
+entity: impuestos
+enabled: true
+
+access:
+  mdb: Articulo.mdb
+  table: Impuestos
+  pk: ImpInt_Codigo
+  pk_type: byte
+
+postgres:
+  schema: articulos
+  table: impuestosInternos
+  pk: impuestoInterno_id
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 5m
+
+fields:
+  - access: ImpInt_Codigo
+    pg: impuestoInterno_id
+    type: int
+
+  - access: ImpInt_Descripcion
+    pg: impuestoInterno_descripcion
+    type: string
+    transform: trim
+
+  - access: ImpInt_Monto
+    pg: impuestoInterno_monto
+    type: decimal
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

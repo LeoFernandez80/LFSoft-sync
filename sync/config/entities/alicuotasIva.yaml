@@ -1,0 +1,37 @@
+entity: alicuotas
+enabled: true
+
+access:
+  mdb: Articulo.mdb
+  table: Alicuotas
+  pk: AlicIva_Codigo
+  pk_type: byte
+
+postgres:
+  schema: articulos
+  table: alicuotasIva
+  pk: alicuotaIva_id
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 5m
+
+fields:
+  - access: AlicIva_Codigo
+    pg: alicuotaIva_id
+    type: int
+
+  - access: AlicIva_Descripcion
+    pg: alicuotaIva_descripcion
+    type: string
+    transform: trim
+
+  - access: AlicIva_Tasa
+    pg: alicuotaIva_tasa
+    type: decimal
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

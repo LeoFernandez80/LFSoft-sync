@@ -1,0 +1,37 @@
+entity: grupos
+enabled: true
+
+access:
+  mdb: Articulo.mdb
+  table: Grupos
+  pk: Grupo_Codigo
+  pk_type: int
+
+postgres:
+  schema: articulos
+  table: grupos
+  pk: grupo_id
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 5m
+
+fields:
+  - access: Grupo_Codigo
+    pg: grupo_id
+    type: int
+
+  - access: Grupo_Descripcion
+    pg: grupo_descripcion
+    type: string
+    transform: trim
+
+  - access: Familia_Codigo
+    pg: grupo_familia_id
+    type: int
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

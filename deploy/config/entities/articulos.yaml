@@ -22,7 +22,6 @@ fields:
   - access: Articulo_Codigo
     pg: articulo_codigo
     type: string
-    transform: trim
 
   - access: Articulo_CID
     pg: articulo_cid
@@ -256,18 +255,11 @@ fields:
     nullable: true
     null_sentinels: ["0"]
 
-  - access: PosAran_Numero
-    pg: articulo_posicionArancelaria_id
-    type: int
-    nullable: true
-    null_sentinels: ["0"]
-
   - access: Articulo_Discontinuado
     pg: articulo_isActive
     type: access_bool_inverse
 
 sync:
-  interval: 5s
+  interval: 10s
   batch_size: 100
   direction: both
-  use_idcoord: false

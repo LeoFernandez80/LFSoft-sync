@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/lfsoft/sync/internal/state"
 	"github.com/lfsoft/sync/internal/synclog"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
@@ -50,15 +52,23 @@ func main() {
 }
 
 func runSync(cfgPath, initialLoad string, dryRun bool, stop chan struct{}) {
-	logger, _ := zap.NewProduction()
+	cfg, cfgErr := config.Load(cfgPath)
+	logFile := ""
+	if cfgErr == nil {
+		logFile = cfg.LogFile
+	}
+	logger, err := newLogger(logFile)
+	if err != nil {
+		logger, _ = zap.NewProduction()
+		logger.Sugar().Warnw("log file unavailable, logging to stderr only", "path", logFile, "err", err)
+	}
 	defer logger.Sync()
 	log := logger.Sugar()
 
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		log.Fatalf("config: %v", err)
+	if cfgErr != nil {
+		log.Fatalf("config: %v", cfgErr)
 	}
-	log.Infow("config loaded", "entities", len(cfg.Entities), "port", cfg.SyncPort)
+	log.Infow("config loaded", "entities", len(cfg.Entities), "port", cfg.SyncPort, "log_file", logFile)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -150,6 +160,28 @@ func runSync(cfgPath, initialLoad string, dryRun bool, stop chan struct{}) {
 
 	cancel()
 	log.Info("sync service stopped")
+}
+
+// newLogger writes JSON logs to stderr and, if path is set, appends to that file.
+// The file is opened directly: zap output paths parse "C:\..." as a URL scheme.
+func newLogger(path string) (*zap.Logger, error) {
+	encCfg := zap.NewProductionEncoderConfig()
+	encCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	enc := zapcore.NewJSONEncoder(encCfg)
+	level := zap.NewAtomicLevelAt(zap.InfoLevel)
+
+	cores := []zapcore.Core{zapcore.NewCore(enc, zapcore.Lock(os.Stderr), level)}
+	if path != "" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, err
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return nil, err
+		}
+		cores = append(cores, zapcore.NewCore(enc, zapcore.AddSync(f), level))
+	}
+	return zap.New(zapcore.NewTee(cores...), zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel)), nil
 }
 
 func openMDBConnections(cfg *config.Config) (map[string]*accessdb.Conn, error) {

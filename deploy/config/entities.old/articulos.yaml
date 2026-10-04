@@ -1,0 +1,273 @@
+entity: articles
+enabled: true
+
+access:
+  mdb: Articulo.mdb
+  table: Articulos
+  pk: Articulo_Codigo
+  pk_type: text
+
+postgres:
+  schema: articulos
+  table: articulos
+  pk: articulo_id
+  business_key: articulo_codigo
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 5m
+
+fields:
+  - access: Articulo_Codigo
+    pg: articulo_codigo
+    type: string
+    transform: trim
+
+  - access: Articulo_CID
+    pg: articulo_cid
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Articulo_Descripcion
+    pg: articulo_descripcion
+    type: string
+    transform: trim
+
+  - access: Articulo_Observacion
+    pg: articulo_observacion
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Articulo_CodigoProveedor
+    pg: articulo_codigoProveedor
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Articulo_DescripcionProveedor
+    pg: articulo_descripcionProveedor
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Proveedor_Codigo
+    pg: articulo_proveedorCodigo
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Articulo_Costo
+    pg: articulo_costo
+    type: decimal
+    nullable: true
+
+  - access: Articulo_CostoReal
+    pg: articulo_costoReal
+    type: decimal
+    nullable: true
+
+  - access: Articulo_CostoOrigen
+    pg: articulo_costoOrigen
+    type: decimal
+    nullable: true
+
+  - access: Articulo_FactorDeterminado
+    pg: articulo_factorDeterminado
+    type: decimal
+    nullable: true
+
+  - access: Articulo_ProvDescuento
+    pg: articulo_provDescuento
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Coeficiente1
+    pg: articulo_coeficiente1
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Coeficiente2
+    pg: articulo_coeficiente2
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Coeficiente3
+    pg: articulo_coeficiente3
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Coeficiente4
+    pg: articulo_coeficiente4
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Coeficiente5
+    pg: articulo_coeficiente5
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Publico
+    pg: articulo_publico
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Precio2
+    pg: articulo_precio2
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Precio3
+    pg: articulo_precio3
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Precio4
+    pg: articulo_precio4
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Precio5
+    pg: articulo_precio5
+    type: decimal
+    nullable: true
+
+  - access: Articulo_PrecioLista
+    pg: articulo_precioLista
+    type: decimal
+    nullable: true
+
+  - access: Articulo_ListProveedor
+    pg: articulo_listProveedor
+    type: decimal
+    nullable: true
+
+  - access: Articulo_ListProveedorMoneda
+    pg: articulo_listProveedorMoneda
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Articulo_PtoMin
+    pg: articulo_ptoMin
+    type: decimal
+    nullable: true
+
+  - access: Articulo_PtoMax
+    pg: articulo_ptoMax
+    type: decimal
+    nullable: true
+
+  - access: Articulo_Peso
+    pg: articulo_peso
+    type: decimal
+    nullable: true
+
+  - access: Articulo_DtoMax
+    pg: articulo_dtoMax
+    type: decimal
+    nullable: true
+
+  - access: Articulo_ActDtoMax
+    pg: articulo_actDtoMax
+    type: access_bool
+
+  - access: Articulo_FechaDtoMax
+    pg: articulo_fechaDtoMax
+    type: date
+    nullable: true
+
+  - access: Articulo_PrecioActualizado
+    pg: articulo_precioActualizado
+    type: access_bool
+
+  - access: Fecha_Precio
+    pg: articulo_fechaPrecio
+    type: date
+    nullable: true
+
+  - access: Articulo_PrecioProvActualizado
+    pg: articulo_precioProvActualizado
+    type: access_bool
+
+  - access: Fecha_PrecioProv
+    pg: articulo_fechaPrecioProv
+    type: date
+    nullable: true
+
+  - access: Articulo_ConsPers
+    pg: articulo_consPers
+    type: access_bool
+
+  - access: Articulo_PorFabricacion
+    pg: articulo_porFabricacion
+    type: access_bool
+
+  - access: Articulo_CategoriaPlazoEntrega
+    pg: articulo_categoriaPlazoEntrega
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Articulo_Imagen
+    pg: articulo_imagen
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Articulo_ImagenMiniatura
+    pg: articulo_imagenMiniatura
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Articulo_DiscontinuadoFecha
+    pg: articulo_fechaDiscontinuado
+    type: date
+    nullable: true
+
+  - access: Familia_Codigo
+    pg: articulo_familia_id
+    type: int
+
+  - access: Grupo_Codigo
+    pg: articulo_grupo_id
+    type: int
+
+  - access: Articulo_UnidadMedida
+    pg: articulo_unidadMedida_id
+    type: int
+
+  - access: Articulo_RefProvUnidadMedida
+    pg: articulo_refProvUnidadMedida_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: AlicIva_Codigo
+    pg: articulo_alicuotaIva_id
+    type: int
+
+  - access: ImpInt_Codigo
+    pg: articulo_impuestoInterno_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: PosAran_Numero
+    pg: articulo_posicionArancelaria_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Articulo_Discontinuado
+    pg: articulo_isActive
+    type: access_bool_inverse
+
+sync:
+  interval: 5s
+  batch_size: 100
+  direction: both
+  use_idcoord: false

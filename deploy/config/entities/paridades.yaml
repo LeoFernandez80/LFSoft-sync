@@ -1,0 +1,57 @@
+entity: paridades
+enabled: true
+
+access:
+  mdb: Utilidades.mdb
+  table: Paridades
+  pk: Paridad_Fecha
+  pk_type: date
+
+postgres:
+  schema: articulos
+  table: paridades
+  pk: paridad_id
+  business_key: paridad_fecha
+
+detection:
+  access_to_pg: timestamp
+  timestamp_column: Paridad_Fecha
+  pg_to_access: trigger
+  full_scan_interval: 5m
+
+fields:
+  - access: Paridad_Fecha
+    pg: paridad_fecha
+    type: date
+
+  - access: Paridad_FechaCorrespondeA
+    pg: paridad_fechaCorrespondeA
+    type: date
+    nullable: true
+
+  - access: Paridad_DOLAR
+    pg: paridad_dolar
+    type: decimal
+
+  - access: Paridad_EURO
+    pg: paridad_euro
+    type: decimal
+
+  - access: Paridad_DOLARDIVISA
+    pg: paridad_dolarDivisa
+    type: decimal
+
+  - access: Paridad_EURODIVISA
+    pg: paridad_euroDivisa
+    type: decimal
+
+  - access: Paridad_Usuario
+    pg: paridad_usuario
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+sync:
+  interval: 10s
+  batch_size: 100
+  direction: both

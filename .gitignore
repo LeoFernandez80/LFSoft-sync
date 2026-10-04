@@ -11,3 +11,7 @@ tmp/
 # IDE
 .vscode/
 .idea/
+
+# Certificados de firma
+*.pfx
+*.p12

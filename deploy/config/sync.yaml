@@ -2,3 +2,4 @@
 pg_dsn: "postgres://postgres:lfsoft@localhost:5432/lfsoft_hidramic?sslmode=disable"
 mdb_base_path: "C:\\PSB\\Hidramic"
 entities_dir: "C:\\Apps\\LFSoft\\tools\\sync\\config\\entities"
+log_file: "C:\\Apps\\LFSoft\\tools\\sync\\logs\\sync.log"

@@ -14,6 +14,7 @@ type Config struct {
 	PgDSN       string        `yaml:"pg_dsn"`
 	MdbBasePath string        `yaml:"mdb_base_path"`
 	EntitiesDir string        `yaml:"entities_dir"`
+	LogFile     string        `yaml:"log_file"`
 	Entities    []EntityConfig `yaml:"-"`
 }
 

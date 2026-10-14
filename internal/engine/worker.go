@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -28,10 +29,18 @@ type Worker struct {
 	synclogR   *synclog.Repository
 	guard      *guard.Guard
 	fkResolver mapper.FKResolver
+	lookup     mapper.LookupResolver
 	log        *zap.SugaredLogger
 	dryRun     bool
 
 	consecutiveErrors int
+
+	// lastWritten maps Access PK → fingerprint of the mapped values last handed to PG (for
+	// documents: of the whole tree).
+	lastWritten map[string]string
+	// rootWritten maps Access PK → fingerprint of a document's root row alone, so a
+	// change-triggered full scan reads children only for roots that changed.
+	rootWritten map[string]string
 }
 
 const (
@@ -48,6 +57,7 @@ func NewWorker(
 	synclogR *synclog.Repository,
 	g *guard.Guard,
 	fk mapper.FKResolver,
+	lk mapper.LookupResolver,
 	log *zap.SugaredLogger,
 	dryRun bool,
 ) *Worker {
@@ -62,8 +72,12 @@ func NewWorker(
 		synclogR:   synclogR,
 		guard:      g,
 		fkResolver: fk,
+		lookup:     lk,
 		log:        log.With("entity", cfg.Entity),
 		dryRun:     dryRun,
+
+		lastWritten: make(map[string]string),
+		rootWritten: make(map[string]string),
 	}
 }
 
@@ -145,16 +159,27 @@ func (w *Worker) cycle(ctx context.Context) {
 		filtered = append(filtered, row)
 	}
 
+	var ok bool
 	if len(w.entity.Children) > 0 {
-		w.syncDocuments(ctx, filtered, entry)
+		ok = w.syncDocuments(ctx, filtered, entry, result.Action == detector.ActionFullScan, result.Periodic)
 	} else {
-		w.syncSimple(ctx, filtered, entry)
+		ok = w.syncSimple(ctx, filtered, entry, result.Periodic)
+	}
+	if !ok {
+		// Nothing was written: keep the state (modtime, last scan) so the next cycle retries.
+		w.consecutiveErrors++
+		entry.FinishedAt = time.Now()
+		entry.DurationMs = int(time.Since(start).Milliseconds())
+		if err := w.synclogR.Insert(ctx, entry); err != nil {
+			w.log.Warnw("synclog insert failed", "err", err)
+		}
+		return
 	}
 
 	writeMs := time.Since(writeStart).Milliseconds()
 
 	// Handle deletes on full scan
-	if result.Action == detector.ActionFullScan && !w.dryRun {
+	if result.Action == detector.ActionFullScan && !w.dryRun && w.entity.DeletesMissing() {
 		deleteStart := time.Now()
 		accessPKs := make([]string, 0, len(rows))
 		for _, row := range rows {
@@ -172,10 +197,14 @@ func (w *Worker) cycle(ctx context.Context) {
 	// Update state
 	now := time.Now()
 	newState := &state.SyncState{
-		Entity:        w.entity.Entity,
-		LastMaxPK:     &result.NewMaxPK,
-		LastCount:     &result.NewCount,
-		LastFileModTime: &result.FileModTime,
+		Entity:    w.entity.Entity,
+		LastMaxPK: &result.NewMaxPK,
+		LastCount: &result.NewCount,
+	}
+	// Only a full scan sees edits to existing rows, so the modtime is consumed only by one;
+	// incremental/timestamp cycles leave it pending and the detector schedules the full scan.
+	if result.Action == detector.ActionFullScan {
+		newState.LastFileModTime = &result.FileModTime
 	}
 	if result.Action == detector.ActionTimestamp || result.Action == detector.ActionFullScan {
 		tsVal := now
@@ -209,85 +238,174 @@ func (w *Worker) cycle(ctx context.Context) {
 	)
 }
 
-func (w *Worker) fwMapper(ctx context.Context) *mapper.Forward {
-	if w.fkResolver != nil {
-		return w.mapper.WithFK(ctx, w.fkResolver)
-	}
-	return w.mapper
+func (w *Worker) resolvers(ctx context.Context) mapper.Resolvers {
+	return mapper.Resolvers{Ctx: ctx, FK: w.fkResolver, Lookup: w.lookup}
 }
 
-func (w *Worker) syncSimple(ctx context.Context, filtered []reader.Row, entry *synclog.Entry) {
+func (w *Worker) fwMapper(ctx context.Context) *mapper.Forward {
+	return w.mapper.With(w.resolvers(ctx))
+}
+
+// syncSimple reports false when the batch write failed as a whole (nothing was written).
+// Unless periodic, rows whose mapped values equal the last ones handed to PG are left out, so a
+// change-triggered full scan writes only what was edited instead of staging the whole table.
+func (w *Worker) syncSimple(ctx context.Context, filtered []reader.Row, entry *synclog.Entry, periodic bool) bool {
 	m := w.fwMapper(ctx)
-	mapped, err := m.MapBatch(filtered)
-	if err != nil {
-		w.log.Errorw("map batch failed", "err", err)
-		entry.Errors++
-		return
+	// Map row by row: one unconvertible Access row must not block the rest of the batch.
+	mapped := make([]*mapper.MappedRow, 0, len(filtered))
+	fingerprints := make(map[string]string, len(filtered))
+	var firstMapErr error
+	for _, row := range filtered {
+		mr, err := m.Map(row)
+		if err != nil {
+			pk := fmt.Sprintf("%v", row[w.entity.Access.PK])
+			w.log.Warnw("map row failed", "pk", pk, "err", err)
+			entry.Errors++
+			if firstMapErr == nil {
+				firstMapErr = fmt.Errorf("map pk=%s: %w", pk, err)
+			}
+			continue
+		}
+		fp := fmt.Sprintf("%v", mr.PGVals)
+		fingerprints[mr.PKVal] = fp
+		if !periodic && mr.PKVal != "" && w.lastWritten[mr.PKVal] == fp {
+			continue
+		}
+		mapped = append(mapped, mr)
+	}
+	if firstMapErr != nil {
+		setErrorDetail(entry, firstMapErr)
+	}
+	// Remember values once PG has them (or has rejected them: the writer retries rejects on
+	// periodic scans). A failed batch keeps the old map so those rows are sent again.
+	remember := func() {
+		if periodic {
+			w.lastWritten = fingerprints
+			return
+		}
+		for _, mr := range mapped {
+			w.lastWritten[mr.PKVal] = fingerprints[mr.PKVal]
+		}
+	}
+	if len(mapped) == 0 {
+		return true
 	}
 
 	if w.dryRun {
 		w.log.Infow("dry-run: would write", "count", len(mapped))
-		return
+		return true
 	}
 
 	written, err := w.writer.SyncBatch(ctx, mapped)
+	var rowErrs *writer.RowErrors
+	if errors.As(err, &rowErrs) {
+		w.log.Warnw("rows skipped on write", "count", rowErrs.Count, "written", written, "sample", rowErrs.Sample)
+		entry.Errors += rowErrs.Count
+		setErrorDetail(entry, err)
+		entry.Written = written
+		remember()
+		return true
+	}
 	if err != nil {
 		w.log.Errorw("write batch failed", "err", err)
 		entry.Errors++
-		return
+		setErrorDetail(entry, fmt.Errorf("write batch: %w", err))
+		return false
 	}
 	entry.Written = written
+	remember()
+	return true
 }
 
-func (w *Worker) syncDocuments(ctx context.Context, parentRows []reader.Row, entry *synclog.Entry) {
-	m := w.fwMapper(ctx)
-	for _, parentRow := range parentRows {
-		parentPK := fmt.Sprintf("%v", parentRow[w.entity.Access.PK])
+func setErrorDetail(entry *synclog.Entry, err error) {
+	if entry.ErrorDetail != nil {
+		return
+	}
+	detail := err.Error()
+	entry.ErrorDetail = &detail
+}
 
-		parentMapped, err := m.Map(parentRow)
-		if err != nil {
-			w.log.Warnw("map parent failed", "pk", parentPK, "err", err)
-			entry.Errors++
-			continue
-		}
-
-		childrenData := make(map[string][]*mapper.MappedRow)
-		for i := range w.entity.Children {
-			childCfg := &w.entity.Children[i]
-			childRows, err := w.reader.ReadChildren(ctx, childCfg, parentPK)
+// syncDocuments writes roots with their child trees. Reading children is the expensive part, so:
+//   - a change-triggered full scan (fullScan && !periodic) only completes roots whose own row
+//     changed since it was last written; child-only edits wait for the periodic scan or a
+//     timestamp read;
+//   - unless periodic, a document whose whole tree equals the last one written is skipped.
+//
+// It reports false when an Access read failed, so the cycle keeps its state and retries.
+func (w *Worker) syncDocuments(ctx context.Context, rows []reader.Row, entry *synclog.Entry, fullScan, periodic bool) bool {
+	if fullScan && !periodic {
+		m := w.fwMapper(ctx)
+		changed := rows[:0:0]
+		for _, row := range rows {
+			mr, err := m.Map(row)
 			if err != nil {
-				w.log.Warnw("read children failed", "child", childCfg.Entity, "parent_pk", parentPK, "err", err)
-				entry.Errors++
+				changed = append(changed, row) // the builder reports the error
 				continue
 			}
-
-			childMapper := mapper.NewChildForward(childCfg)
-			for _, cr := range childRows {
-				cm, err := childMapper.Map(cr)
-				if err != nil {
-					w.log.Warnw("map child failed", "child", childCfg.Entity, "err", err)
-					continue
-				}
-				childrenData[childCfg.Entity] = append(childrenData[childCfg.Entity], cm)
+			if w.rootWritten[mr.PKVal] != mapper.HashValues(mr.PGVals) {
+				changed = append(changed, row)
 			}
 		}
-
-		if w.dryRun {
-			total := 0
-			for _, ch := range childrenData {
-				total += len(ch)
-			}
-			w.log.Infow("dry-run: would write document", "pk", parentPK, "children", total)
-			continue
-		}
-
-		if err := w.writer.UpsertDocument(ctx, parentMapped, w.entity.Children, childrenData); err != nil {
-			w.log.Warnw("write document failed", "pk", parentPK, "err", err)
-			entry.Errors++
-			continue
-		}
-		entry.Written++
+		rows = changed
 	}
+
+	b := &docBuilder{cfg: w.entity, reader: w.reader, res: w.resolvers(ctx)}
+	ok := true
+	for start := 0; start < len(rows); start += docBatchSize {
+		end := start + docBatchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		docs, err := b.build(ctx, rows[start:end])
+		if err != nil {
+			w.log.Errorw("read document children failed", "err", err)
+			entry.Errors++
+			setErrorDetail(entry, fmt.Errorf("read children: %w", err))
+			ok = false
+			continue
+		}
+		for _, d := range docs {
+			if d.err != nil {
+				w.log.Warnw("map document failed", "pk", d.pk, "err", d.err)
+				entry.Errors++
+				setErrorDetail(entry, fmt.Errorf("map pk=%s: %w", d.pk, d.err))
+				continue
+			}
+			fp := d.doc.Fingerprint()
+			if !periodic && w.lastWritten[d.pk] == fp {
+				w.rememberRoot(d)
+				continue
+			}
+			if w.dryRun {
+				w.log.Infow("dry-run: would write document", "pk", d.pk, "children", countChildren(d.doc))
+				continue
+			}
+			if err := w.writer.UpsertDocument(ctx, d.doc); err != nil {
+				w.log.Warnw("write document failed", "pk", d.pk, "err", err)
+				entry.Errors++
+				setErrorDetail(entry, fmt.Errorf("write pk=%s: %w", d.pk, err))
+				continue
+			}
+			w.lastWritten[d.pk] = fp
+			w.rememberRoot(d)
+			entry.Written++
+		}
+	}
+	return ok
+}
+
+func (w *Worker) rememberRoot(d built) {
+	w.rootWritten[d.pk] = mapper.HashValues(d.doc.Row.PGVals)
+}
+
+func countChildren(d *mapper.DocRow) int {
+	n := 0
+	for _, ch := range d.Children {
+		for _, c := range ch {
+			n += 1 + countChildren(c)
+		}
+	}
+	return n
 }
 
 func (w *Worker) handleError(ctx context.Context, entry *synclog.Entry, start time.Time, err error) {

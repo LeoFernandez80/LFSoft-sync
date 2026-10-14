@@ -1,0 +1,1098 @@
+# Presupuestos (Presup.mdb) <-> sales.quotes y su arbol de lineas:
+#   Items -> quoteItems
+#     Detalles / Otros / Reales_Detalles / Reales_Otros / Movimientos (retiros de stock)
+# Mapeo tomado del ETL LFSoft-app/database/sales/etl/02_transform.sql.
+#
+# Access -> PG: todo el arbol. PG -> Access: el documento entero (cabecera + lineas) cada vez
+# que la app lo guarda (triggers de sync V010), menos Movimientos, que es del legacy.
+# Solo se escriben las columnas mapeadas: lo que esta en Access y no en PG (nombre del
+# subcliente, usuario que confecciono, etc.) queda como esta para la app legacy.
+# Depende de clientes.yaml y articulos.yaml: cliente y articulo se resuelven por lookup.
+#
+# Numeracion: la app toma MAX(Access, PG) + 1 de este sync (use_idcoord) y reintenta +1 si
+# el numero ya existe. Como la app escribe sus presupuestos en Access, el MAX+1 del VB6 los ve.
+#
+# ANTES DE HABILITAR: los presupuestos que la app creo hasta hoy se numeraron con
+# quotes_number_seq y no estan en Access. Si alguno comparte numero con uno del VB6, al
+# habilitar el sync el de Access pisaria al de la app. Verificar que no haya numeros
+# repetidos (ver resumen de la implementacion) y despues pasar enabled a true.
+entity: quotes
+enabled: false
+
+access:
+  mdb: Presup.mdb
+  table: Presupuestos
+  pk: Presupuesto_Numero
+  pk_type: long
+  # Antes de 2006 el legacy no numeraba las lineas (SubItem_Numero vacio): 7.298 claves
+  # repetidas en Detalles y 3.271 en Otros, todas de 1996-2005. Sin clave no hay forma de
+  # emparejar esas lineas con PG, asi que esos presupuestos quedan solo en Access.
+  filter: "Presupuesto_Fecha >= #1/1/2006#"
+
+postgres:
+  schema: sales
+  table: quotes
+  pk: quote_id
+  business_key: quote_number
+
+detection:
+  access_to_pg: timestamp
+  timestamp_column: Fecha_Modificado
+  pg_to_access: trigger
+  # El scan periodico relee todas las lineas de todos los presupuestos: espaciarlo. Los
+  # scans por cambio del .mdb solo leen las lineas de los presupuestos cuya cabecera cambio;
+  # una linea editada sin tocar la cabecera ni Fecha_Modificado espera al periodico.
+  full_scan_interval: 2h
+  change_scan_interval: 5m
+
+fields:
+  - access: Presupuesto_Numero
+    pg: quote_number
+    type: int
+
+  - access: Presupuesto_Fecha
+    pg: quote_date
+    type: date
+
+  - access: Presupuesto_Estado
+    pg: quote_status
+    type: int
+
+  # quote_customer_id es customers.customer_id, NO el codigo legacy (ver sales V023).
+  - access: Cliente_Codigo
+    pg: quote_customer_id
+    type: int
+    lookup:
+      table: sales.customers
+      match: customer_legacyCode
+      select: customer_id
+
+  - access: Cliente_Codigo
+    pg: quote_customerName
+    type: string
+    lookup:
+      table: sales.customers
+      match: customer_legacyCode
+      select: customer_businessName
+
+  # Codigo 0 es un destino real del legacy ("sin nombrar"), no un nulo (ver sales V022).
+  - access: SubCliente_Codigo
+    pg: quote_subCustomer_id
+    type: int
+    nullable: true
+
+  - access: Presupuesto_Atencion
+    pg: quote_attention
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_Moneda
+    pg: quote_currency_id
+    type: int
+    offset: 1
+
+  - access: Presupuesto_Moneda
+    pg: quote_currencyName
+    type: string
+    offset: 1
+    lookup:
+      table: precios.monedas
+      match: moneda_id
+      select: moneda_descripcion
+
+  - access: Presupuesto_Paridad
+    pg: quote_parity
+    type: decimal
+
+  - access: Presupuesto_Condiciones
+    pg: quote_paymentCondition
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_CtaCteDias
+    pg: quote_accountDays
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Presupuesto_Validez
+    pg: quote_validity
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_PlazoEntrega
+    pg: quote_deliveryTerm
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_Entrega
+    pg: quote_deliveryPlace
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_Tiene_Cotizacion
+    pg: quote_hasQuotation
+    type: access_bool
+
+  - access: Presupuesto_Documentacion
+    pg: quote_documentation
+    type: int
+
+  - access: Presupuesto_Trabajo
+    pg: quote_generalDescription
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  # Total legacy tal cual: no se recalcula (ver ETL paso 1).
+  - access: Presupuesto_Total
+    pg: quote_total
+    type: decimal
+
+  - access: Presupuesto_Descuento
+    pg: quote_discount
+    type: decimal
+
+  - access: Presupuesto_MotivoRechazo
+    pg: quote_rejectionReason
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_Nota
+    pg: quote_note
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_FechaEnvio
+    pg: quote_sentAt
+    type: date
+    nullable: true
+
+  - access: Presupuesto_FechaAceptacionPedido
+    pg: quote_acceptedAt
+    type: date
+    nullable: true
+
+  # --- columnas legacy (sales V009) ---
+  - access: Presupuesto_CondVenta
+    pg: quote_saleCondition
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Presupuesto_Cond_habitual
+    pg: quote_isUsualCondition
+    type: access_bool
+
+  - access: Presupuesto_ImpBanco
+    pg: quote_printBank
+    type: access_bool
+
+  - access: Presupuesto_Banco
+    pg: quote_bankCode
+    type: int
+    nullable: true
+
+  - access: Presupuesto_PercepcionIIBBPorcentaje
+    pg: quote_iibbPerceptionRate
+    type: decimal
+
+  - access: Presupuesto_PercepcionIIBBMotivo
+    pg: quote_iibbPerceptionReason
+    type: int
+    nullable: true
+
+  - access: Presupuesto_PercepcionIIBBNota
+    pg: quote_iibbPerceptionNote
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Trabajo_Exento
+    pg: quote_isTaxExempt
+    type: access_bool
+
+  - access: Trabajo_ExentoFOB
+    pg: quote_isFobExempt
+    type: access_bool
+
+  - access: Trabajo_NoGrabado
+    pg: quote_isNonTaxable
+    type: access_bool
+
+  - access: Presupuesto_TipoTrabajoExento
+    pg: quote_exemptWorkType
+    type: int
+    nullable: true
+
+  - access: Presupuesto_LeyendaExento
+    pg: quote_exemptLegend
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_Con_Ajuste
+    pg: quote_hasAdjustment
+    type: access_bool
+
+  - access: Presupuesto_Con_Ajuste_Moneda
+    pg: quote_adjustmentCurrency
+    type: int
+    nullable: true
+
+  - access: Presupuesto_No_Tiene_Cotizacion
+    pg: quote_hasNoQuotation
+    type: access_bool
+
+  - access: Presupuesto_Es_Euros
+    pg: quote_isEuro
+    type: access_bool
+
+  - access: Presupuesto_EnvioCotiz
+    pg: quote_quotationSent
+    type: access_bool
+
+  - access: Fecha_Ejecucion
+    pg: quote_executionDate
+    type: date
+    nullable: true
+
+  - access: Presupuesto_FechaFacturaProForma
+    pg: quote_proformaInvoiceDate
+    type: date
+    nullable: true
+
+  - access: Confeccionadopor
+    pg: quote_createdByLegacy_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Fecha_Modificado
+    pg: quote_updatedAt
+    type: date
+    nullable: true
+
+  - access: Presupuesto_InformeReq
+    pg: quote_reportRequired
+    type: int
+    nullable: true
+
+  - access: Presupuesto_Relevamiento
+    pg: quote_surveyRequired
+    type: int
+    nullable: true
+
+  - access: Presupuesto_PruebaInicial
+    pg: quote_initialTestRequired
+    type: int
+    nullable: true
+
+  - access: Presupuesto_PruebaFinal
+    pg: quote_finalTestRequired
+    type: int
+    nullable: true
+
+  - access: Presupuesto_ReqCotizacionAdm
+    pg: quote_adminQuotationRequired
+    type: int
+    nullable: true
+
+  - access: Presupuesto_ProcedimientoTecnico
+    pg: quote_technicalProcedure
+    type: int
+    nullable: true
+
+  - access: Presupuesto_InformeTecnico
+    pg: quote_technicalReport
+    type: int
+    nullable: true
+
+  - access: Presupuesto_InformeTecnicoAnterior
+    pg: quote_previousTechnicalReport
+    type: int
+    nullable: true
+
+  - access: Presupuesto_EstMatTrab
+    pg: quote_materialStatusChecked
+    type: access_bool
+
+  - access: Presupuesto_ImpNota
+    pg: quote_printNote
+    type: access_bool
+
+  - access: Presupuesto_Legacy
+    pg: quote_isLegacy
+    type: access_bool
+
+  - access: Presupuesto_Duplicado
+    pg: quote_isDuplicate
+    type: access_bool
+
+  - access: Presupuesto_DuplicadoNumero
+    pg: quote_duplicateOfNumber
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Presupuesto_DuplicadoDetalle
+    pg: quote_duplicateDetail
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: VendedorExterno_Codigo
+    pg: quote_externalSalesperson_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: VendedorExterno_Comision
+    pg: quote_externalSalespersonCommission
+    type: decimal
+
+  - access: Provincia_CodigoCM
+    pg: quote_provinceCmCode
+    type: int
+    nullable: true
+
+  - access: Presupuesto_Pais_Codigo
+    pg: quote_country_id
+    type: int
+    nullable: true
+
+  - access: Presupuesto_TransporteOpcion
+    pg: quote_transportOption
+    type: int
+    nullable: true
+
+  - access: Presupuesto_TransporteEntregaIntermedia
+    pg: quote_intermediateCarrier_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Presupuesto_Flete
+    pg: quote_freightOption
+    type: int
+    nullable: true
+
+  - access: Presupuesto_FormaEntrega
+    pg: quote_deliveryMethod
+    type: int
+    nullable: true
+
+  - access: Presupuesto_ValorDeclarado
+    pg: quote_declaredValue
+    type: decimal
+
+  - access: Presupuesto_ValorDeclaradoMoneda
+    pg: quote_declaredValueCurrency
+    type: int
+    nullable: true
+
+  - access: Presupuesto_Condicion
+    pg: quote_trackingCondition
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Presupuesto_DireccionFiscal
+    pg: quote_fiscalAddress
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_CodigoPostalFiscal
+    pg: quote_fiscalPostalCode
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_DireccionEntregaFinal
+    pg: quote_finalDeliveryAddress
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_Codigo_PostalEntregaFinal
+    pg: quote_finalDeliveryPostalCode
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_DireccionAdministrativa
+    pg: quote_administrativeAddress
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_Codigo_PostalAdministrativa
+    pg: quote_administrativePostalCode
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_InstruccionesAdministrativa
+    pg: quote_administrativeInstructions
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Presupuesto_DireccionEntregaIntermedia
+    pg: quote_intermediateDeliveryAddress
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_Codigo_PostalEntregaIntermedia
+    pg: quote_intermediateDeliveryPostalCode
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Presupuesto_InstruccionesEntregaIntermedia
+    pg: quote_intermediateDeliveryInstructions
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+children:
+  # ------------------------------------------------------------------ Items
+  - entity: quoteItems
+    access:
+      table: Items
+      pk: Item_Numero
+      parent_fk: Presupuesto_Numero
+    postgres:
+      table: quoteItems
+      pk: quoteItem_id
+      parent_fk: quoteItem_quote_id
+      conflict: [quoteItem_quote_id, quoteItem_number]
+      delete_missing: true
+    fields:
+      - access: Item_Numero
+        pg: quoteItem_number
+        type: int
+
+      - access: Item_Descripcion
+        pg: quoteItem_description
+        type: string
+        transform: trim
+
+      - access: Item_DescripcionRTF
+        pg: quoteItem_descriptionRtf
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Actividad_Codigo
+        pg: quoteItem_activityCode
+        type: string
+        transform: trim
+
+      - access: Actividad_Codigo
+        pg: quoteItem_actividad_id
+        type: int
+        nullable: true
+        lookup:
+          table: articulos.actividades
+          match: actividad_codigo
+          select: actividad_id
+
+      - access: Actividad_Codigo
+        pg: quoteItem_activityName
+        type: string
+        nullable: true
+        lookup:
+          table: articulos.actividades
+          match: actividad_codigo
+          select: actividad_descripcion
+
+      - access: Item_Cantidad
+        pg: quoteItem_quantity
+        type: decimal
+
+      - access: Item_Precio
+        pg: quoteItem_price
+        type: decimal
+
+      - access: Item_Costo
+        pg: quoteItem_cost
+        type: decimal
+
+      - access: Item_PrecioReal
+        pg: quoteItem_realPrice
+        type: decimal
+
+      - access: Item_CantConfirmada
+        pg: quoteItem_confirmedQuantity
+        type: decimal
+
+      - access: Item_CantEntregada
+        pg: quoteItem_deliveredQuantity
+        type: decimal
+
+      - access: Item_CantFacturada
+        pg: quoteItem_invoicedQuantity
+        type: decimal
+
+      - access: Item_CantRetirada
+        pg: quoteItem_withdrawnQuantity
+        type: decimal
+
+      - access: Item_Facturado
+        pg: quoteItem_isInvoiced
+        type: access_bool
+
+      - access: Item_Toma
+        pg: quoteItem_isTaken
+        type: access_bool
+
+      - access: Item_CtaContable
+        pg: quoteItem_accountingAccount
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Item_OC
+        pg: quoteItem_purchaseOrder
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Item_OCFecha
+        pg: quoteItem_purchaseOrderDate
+        type: date
+        nullable: true
+
+      - access: Item_OCOpcion
+        pg: quoteItem_purchaseOrderOption
+        type: int
+        nullable: true
+
+      - access: Item_TipoMonedaOC
+        pg: quoteItem_purchaseOrderCurrencyType
+        type: int
+        nullable: true
+
+      - access: Item_PlazoCant
+        pg: quoteItem_deliveryTermAmount
+        type: decimal
+
+      - access: Item_PlazoTipo
+        pg: quoteItem_deliveryTermType
+        type: int
+        nullable: true
+
+      - access: Item_PlazoOtro
+        pg: quoteItem_deliveryTermOther
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Item_ProcedimientoTecnico
+        pg: quoteItem_technicalProcedure
+        type: int
+        nullable: true
+
+      - access: Item_InformeTecnico
+        pg: quoteItem_technicalReport
+        type: int
+        nullable: true
+
+      - access: Item_InformeTecnicoAnterior
+        pg: quoteItem_previousTechnicalReport
+        type: int
+        nullable: true
+
+      - access: Item_InformeTecnicoUnico
+        pg: quoteItem_hasSingleTechnicalReport
+        type: access_bool
+
+      - access: Procedimiento_Numero
+        pg: quoteItem_procedureNumber
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+
+      - access: Procedimiento_Version
+        pg: quoteItem_procedureVersion
+        type: int
+        nullable: true
+
+      - access: Procedimiento_Tipo
+        pg: quoteItem_procedureType
+        type: int
+        nullable: true
+
+    children:
+      # ---------------------------------------------- Detalles (articulos estimados)
+      - entity: quoteItemDetails
+        access:
+          table: Detalles
+          pk: SubItem_Numero
+          parent_fk: Item_Numero
+          root_fk: Presupuesto_Numero
+        postgres:
+          table: quoteItemDetails
+          pk: quoteItemDetail_id
+          parent_fk: quoteItemDetail_quoteItem_id
+          conflict: [quoteItemDetail_quoteItem_id, quoteItemDetail_lineNumber]
+          delete_missing: true
+        fields:
+          - access: SubItem_Numero
+            pg: quoteItemDetail_lineNumber
+            type: int
+
+          - access: Articulo_Codigo
+            pg: quoteItemDetail_articleCode
+            type: string
+            transform: trim
+
+          # Jet compara codigos sin distinguir mayusculas: el lookup tambien.
+          - access: Articulo_Codigo
+            pg: quoteItemDetail_article_id
+            type: int
+            lookup:
+              table: articulos.articulos
+              match: articulo_codigo
+              select: articulo_id
+              case_insensitive: true
+
+          - access: Articulo_Codigo
+            pg: quoteItemDetail_description
+            type: string
+            lookup:
+              table: articulos.articulos
+              match: articulo_codigo
+              select: articulo_descripcion
+              case_insensitive: true
+
+          - access: Articulo_Detalle
+            pg: quoteItemDetail_extraDetail
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+          - access: Articulo_Cantidad
+            pg: quoteItemDetail_quantity
+            type: decimal
+
+          - access: Articulo_Precio
+            pg: quoteItemDetail_unitPrice
+            type: decimal
+
+          - access: Articulo_Costo
+            pg: quoteItemDetail_unitCost
+            type: decimal
+
+          - access: Articulo_CostoReal
+            pg: quoteItemDetail_realUnitCost
+            type: decimal
+
+          - access: Articulo_Descuento
+            pg: quoteItemDetail_discount
+            type: decimal
+
+          - access: Articulo_TipoDescuento
+            pg: quoteItemDetail_discountType
+            type: int
+            nullable: true
+
+          - access: Articulo_PrecioLista
+            pg: quoteItemDetail_listPrice
+            type: decimal
+
+          - access: Articulo_DtoMax
+            pg: quoteItemDetail_maxDiscount
+            type: decimal
+
+          # Codigo 0/1 en el legacy, no booleano Jet (-1): int_bool escribe 1/0.
+          - access: Articulo_PrecioControlado
+            pg: quoteItemDetail_isPriceControlled
+            type: int_bool
+
+          - access: Articulo_PrecioActualizado
+            pg: quoteItemDetail_isPriceUpdated
+            type: access_bool
+
+          - access: Articulo_CategoriaPlazoEntrega
+            pg: quoteItemDetail_deliveryTermCategory
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+          - access: Usuario_Usr
+            pg: quoteItemDetail_user
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+      # ---------------------------------------------- Otros (fuera de stock estimados)
+      - entity: quoteItemOthers
+        access:
+          table: Otros
+          pk: SubItem_Numero
+          parent_fk: Item_Numero
+          root_fk: Presupuesto_Numero
+        postgres:
+          table: quoteItemOthers
+          pk: quoteItemOther_id
+          parent_fk: quoteItemOther_quoteItem_id
+          conflict: [quoteItemOther_quoteItem_id, quoteItemOther_lineNumber]
+          delete_missing: true
+        fields:
+          - access: SubItem_Numero
+            pg: quoteItemOther_lineNumber
+            type: int
+
+          - access: Item_Detalle
+            pg: quoteItemOther_description
+            type: string
+            transform: trim
+
+          - access: Item_DetalleExtra
+            pg: quoteItemOther_extraDetail
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+          - access: Item_Cantidad
+            pg: quoteItemOther_quantity
+            type: decimal
+
+          - access: Item_Precio
+            pg: quoteItemOther_unitPrice
+            type: decimal
+
+          - access: Item_Costo
+            pg: quoteItemOther_unitCost
+            type: decimal
+
+          - access: Item_PrecioLista
+            pg: quoteItemOther_listPrice
+            type: decimal
+
+          - access: Item_Descuento
+            pg: quoteItemOther_discount
+            type: decimal
+
+          - access: Item_TipoDescuento
+            pg: quoteItemOther_discountType
+            type: int
+            nullable: true
+
+          - access: Item_Bonif
+            pg: quoteItemOther_bonus
+            type: decimal
+
+          - access: Item_Factor
+            pg: quoteItemOther_factor
+            type: decimal
+
+          - access: Item_FactorImp
+            pg: quoteItemOther_taxFactor
+            type: decimal
+
+          - access: Item_Moneda
+            pg: quoteItemOther_currency
+            type: int
+            nullable: true
+
+          - access: Item_PrecioControlado
+            pg: quoteItemOther_isPriceControlled
+            type: int_bool
+
+          - access: Usuario_Usr
+            pg: quoteItemOther_user
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+      # ---------------------------------------------- Reales_Detalles (articulos reales)
+      - entity: quoteItemRealDetails
+        access:
+          table: Reales_Detalles
+          pk: SubItem_Numero
+          parent_fk: Item_Numero
+          root_fk: Presupuesto_Numero
+        postgres:
+          table: quoteItemRealDetails
+          pk: quoteItemRealDetail_id
+          parent_fk: quoteItemRealDetail_quoteItem_id
+          conflict: [quoteItemRealDetail_quoteItem_id, quoteItemRealDetail_lineNumber]
+          delete_missing: true
+        fields:
+          - access: SubItem_Numero
+            pg: quoteItemRealDetail_lineNumber
+            type: int
+
+          - access: Articulo_Codigo
+            pg: quoteItemRealDetail_articleCode
+            type: string
+            transform: trim
+
+          - access: Articulo_Codigo
+            pg: quoteItemRealDetail_article_id
+            type: int
+            lookup:
+              table: articulos.articulos
+              match: articulo_codigo
+              select: articulo_id
+              case_insensitive: true
+
+          - access: Articulo_Codigo
+            pg: quoteItemRealDetail_description
+            type: string
+            lookup:
+              table: articulos.articulos
+              match: articulo_codigo
+              select: articulo_descripcion
+              case_insensitive: true
+
+          - access: Articulo_Detalle
+            pg: quoteItemRealDetail_extraDetail
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+          - access: Articulo_Cantidad
+            pg: quoteItemRealDetail_quantity
+            type: decimal
+
+          - access: Articulo_Cantidad_Total
+            pg: quoteItemRealDetail_totalQuantity
+            type: decimal
+
+          - access: Articulo_Precio
+            pg: quoteItemRealDetail_unitPrice
+            type: decimal
+
+          - access: Articulo_Costo
+            pg: quoteItemRealDetail_unitCost
+            type: decimal
+
+          - access: Articulo_CostoReal
+            pg: quoteItemRealDetail_realUnitCost
+            type: decimal
+
+          - access: Articulo_Descuento
+            pg: quoteItemRealDetail_discount
+            type: decimal
+
+          - access: Articulo_TipoDescuento
+            pg: quoteItemRealDetail_discountType
+            type: int
+            nullable: true
+
+          - access: Articulo_PrecioLista
+            pg: quoteItemRealDetail_listPrice
+            type: decimal
+
+          - access: Articulo_DtoMax
+            pg: quoteItemRealDetail_maxDiscount
+            type: decimal
+
+          - access: Articulo_PrecioControlado
+            pg: quoteItemRealDetail_isPriceControlled
+            type: int_bool
+
+          - access: Articulo_PrecioActualizado
+            pg: quoteItemRealDetail_isPriceUpdated
+            type: access_bool
+
+          - access: Articulo_CategoriaPlazoEntrega
+            pg: quoteItemRealDetail_deliveryTermCategory
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+          - access: Usuario_Usr
+            pg: quoteItemRealDetail_user
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+      # ---------------------------------------------- Reales_Otros (fuera de stock reales)
+      - entity: quoteItemRealOthers
+        access:
+          table: Reales_Otros
+          pk: SubItem_Numero
+          parent_fk: Item_Numero
+          root_fk: Presupuesto_Numero
+        postgres:
+          table: quoteItemRealOthers
+          pk: quoteItemRealOther_id
+          parent_fk: quoteItemRealOther_quoteItem_id
+          conflict: [quoteItemRealOther_quoteItem_id, quoteItemRealOther_lineNumber]
+          delete_missing: true
+        fields:
+          - access: SubItem_Numero
+            pg: quoteItemRealOther_lineNumber
+            type: int
+
+          - access: Item_Detalle
+            pg: quoteItemRealOther_description
+            type: string
+            transform: trim
+
+          - access: Item_DetalleExtra
+            pg: quoteItemRealOther_extraDetail
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+          - access: Item_Cantidad
+            pg: quoteItemRealOther_quantity
+            type: decimal
+
+          - access: Item_Cantidad_Total
+            pg: quoteItemRealOther_totalQuantity
+            type: decimal
+
+          - access: Item_Precio
+            pg: quoteItemRealOther_unitPrice
+            type: decimal
+
+          - access: Item_Costo
+            pg: quoteItemRealOther_unitCost
+            type: decimal
+
+          - access: Item_PrecioLista
+            pg: quoteItemRealOther_listPrice
+            type: decimal
+
+          - access: Item_Descuento
+            pg: quoteItemRealOther_discount
+            type: decimal
+
+          - access: Item_TipoDescuento
+            pg: quoteItemRealOther_discountType
+            type: int
+            nullable: true
+
+          - access: Item_Bonif
+            pg: quoteItemRealOther_bonus
+            type: decimal
+
+          - access: Item_Factor
+            pg: quoteItemRealOther_factor
+            type: decimal
+
+          - access: Item_FactorImp
+            pg: quoteItemRealOther_taxFactor
+            type: decimal
+
+          - access: Item_Moneda
+            pg: quoteItemRealOther_currency
+            type: int
+            nullable: true
+
+          - access: Item_PrecioControlado
+            pg: quoteItemRealOther_isPriceControlled
+            type: int_bool
+
+          - access: Usuario_Usr
+            pg: quoteItemRealOther_user
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+            transform: trim
+
+      # ---------------------------------------------- Movimientos (retiros de stock)
+      # Saldo NETO retirado por (presupuesto, item, articulo): los retiros (52/59)
+      # suman y las devoluciones (2) restan (PresupStock.bas). Tabla PG nueva:
+      # LFSoft-app sales V025 (deploy/migrations-app/V029).
+      - entity: quoteItemWithdrawals
+        # Los retiros los hace el legacy (descuentan stock en Articulo.mdb): no se escriben
+        # desde PG, para no borrar un retiro que el sync todavia no trajo.
+        direction: access_to_pg
+        access:
+          table: Movimientos
+          pk: Articulo_Codigo
+          parent_fk: Item_Numero
+          root_fk: Presupuesto_Numero
+        postgres:
+          table: quoteItemWithdrawals
+          pk: quoteItemWithdrawal_id
+          parent_fk: quoteItemWithdrawal_quoteItem_id
+          conflict: [quoteItemWithdrawal_quoteItem_id, quoteItemWithdrawal_articleCode]
+          # Movimientos no tiene clave en Access: el mismo articulo puede repetirse en un item
+          # (o con otra mayuscula). Las cantidades se suman, que es lo que significan.
+          sum_on_duplicate: [quoteItemWithdrawal_quantity]
+          delete_missing: true
+        fields:
+          - access: Articulo_Codigo
+            pg: quoteItemWithdrawal_articleCode
+            type: string
+            transform: trim
+
+          # Nullable: el legacy acepta codigos que no estan en el maestro.
+          - access: Articulo_Codigo
+            pg: quoteItemWithdrawal_article_id
+            type: int
+            nullable: true
+            lookup:
+              table: articulos.articulos
+              match: articulo_codigo
+              select: articulo_id
+              case_insensitive: true
+
+          - access: Articulo_Cantidad
+            pg: quoteItemWithdrawal_quantity
+            type: decimal
+
+          - access: Articulo_Precio
+            pg: quoteItemWithdrawal_unitPrice
+            type: decimal
+
+          - access: Articulo_Costo
+            pg: quoteItemWithdrawal_unitCost
+            type: decimal
+
+sync:
+  interval: 3s
+  batch_size: 20
+  direction: both
+  # Los presupuestos que la app creo antes del sync PG -> Access no estan en Access: no
+  # borrarlos de PG por faltar alla.
+  delete_missing: false
+  # GET /sync/next-id/quotes devuelve MAX(Presupuesto_Numero, quote_number) + 1; lo usa
+  # el backend de LFSoft-app para numerar (quotes.WithNumbering, reintenta +1 si choca).
+  # Con business_key el endpoint lo rechazaria sin esta opcion.
+  use_idcoord: true

@@ -1,7 +1,6 @@
 package mapper
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -20,31 +19,88 @@ type AccessMappedRow struct {
 type Reverse struct {
 	fields []config.FieldMap
 	cfg    *config.EntityConfig
-	fk     FKResolver
-	ctx    context.Context
+	res    Resolvers
 }
 
 func NewReverse(cfg *config.EntityConfig) *Reverse {
 	return &Reverse{fields: cfg.Fields, cfg: cfg}
 }
 
-func (m *Reverse) WithFK(ctx context.Context, fk FKResolver) *Reverse {
-	return &Reverse{fields: m.fields, cfg: m.cfg, fk: fk, ctx: ctx}
+// NewChildReverse maps rows of a child collection back to its Access table.
+func NewChildReverse(ch *config.ChildConfig) *Reverse {
+	cfg := &config.EntityConfig{
+		Access: config.AccessConfig{Table: ch.Access.Table, PK: ch.Access.PK},
+		Fields: ch.Fields,
+	}
+	return &Reverse{fields: ch.Fields, cfg: cfg}
+}
+
+// Value returns the value mapped to an Access column, if the row has it.
+func (r *AccessMappedRow) Value(col string) (interface{}, bool) {
+	for i, c := range r.AccessCols {
+		if c == col {
+			return r.AccessVals[i], true
+		}
+	}
+	return nil, false
+}
+
+func (m *Reverse) With(res Resolvers) *Reverse {
+	return &Reverse{fields: m.fields, cfg: m.cfg, res: res}
 }
 
 func (m *Reverse) Map(row reader.Row) (*AccessMappedRow, error) {
 	cols := make([]string, 0, len(m.fields))
 	vals := make([]interface{}, 0, len(m.fields))
 	var accessPK string
+	seen := make(map[string]bool, len(m.fields))
 
 	for _, f := range m.fields {
 		raw, ok := row[f.PG]
 		if !ok {
 			continue
 		}
+		// Several PG columns can come from one Access column (an id and its snapshot text):
+		// the first field wins, so list the reversible one (id) first. Split and query lookups
+		// can't be reversed and are left out.
+		if seen[f.Access] || f.Split != nil || (f.Lookup != nil && f.Lookup.Query != "") {
+			continue
+		}
+		seen[f.Access] = true
+		if f.Lookup != nil {
+			if raw != nil {
+				if m.res.Lookup == nil {
+					return nil, fmt.Errorf("field %s: lookup: no resolver configured", f.PG)
+				}
+				match, found, err := m.res.Lookup.ReverseLookup(m.res.ctx(), f.Lookup, raw)
+				if err != nil {
+					return nil, fmt.Errorf("field %s: %w", f.PG, err)
+				}
+				if !found {
+					return nil, fmt.Errorf("field %s: reverse lookup %s: no match for %v", f.PG, f.Lookup.Table, raw)
+				}
+				raw = match
+			}
+		}
+		if f.Offset != 0 && raw != nil {
+			if n, err := toInt64(raw); err == nil {
+				raw = n - f.Offset
+			}
+		}
+		if f.Map != nil {
+			// The Access side holds the map key (e.g. "SI"), not a typed value.
+			cols = append(cols, f.Access)
+			vals = append(vals, reverseMapValue(f.Map, raw))
+			continue
+		}
 
 		if f.Access == m.cfg.Access.PK {
-			accessPK = fmt.Sprintf("%v", raw)
+			pk := raw
+			// PG date columns arrive as UTC midnight; Access stores local midnight.
+			if t, isTime := raw.(time.Time); isTime && NeedsDatePK(m.cfg) {
+				pk = LocalCalendarDate(t)
+			}
+			accessPK = fmt.Sprintf("%v", pk)
 		}
 
 		if f.Type == "access_datetime" {
@@ -63,10 +119,10 @@ func (m *Reverse) Map(row reader.Row) (*AccessMappedRow, error) {
 			return nil, fmt.Errorf("field %s: %w", f.PG, err)
 		}
 
-		if f.FKResolve != nil && m.fk != nil && v != nil {
+		if f.FKResolve != nil && m.res.FK != nil && v != nil {
 			pgID, err := toInt64(v)
 			if err == nil && pgID != 0 {
-				legacyID, err := m.fk.ResolvePGToLegacy(m.ctx, f.FKResolve.Entity, pgID)
+				legacyID, err := m.res.FK.ResolvePGToLegacy(m.res.ctx(), f.FKResolve.Entity, pgID)
 				if err != nil {
 					return nil, fmt.Errorf("field %s: fk_resolve %s: %w", f.PG, f.FKResolve.Entity, err)
 				}
@@ -79,6 +135,25 @@ func (m *Reverse) Map(row reader.Row) (*AccessMappedRow, error) {
 	}
 
 	return &AccessMappedRow{AccessCols: cols, AccessVals: vals, AccessPK: accessPK}, nil
+}
+
+// reverseMapValue returns the map key whose value equals v (nil when none does).
+func reverseMapValue(m map[string]interface{}, v interface{}) interface{} {
+	if v == nil {
+		return nil
+	}
+	want := fmt.Sprintf("%v", v)
+	if n, err := toInt64(v); err == nil {
+		if _, isBool := v.(bool); !isBool {
+			want = fmt.Sprintf("%d", n)
+		}
+	}
+	for k, mv := range m {
+		if fmt.Sprintf("%v", mv) == want {
+			return k
+		}
+	}
+	return nil
 }
 
 func (m *Reverse) MapBatch(rows []reader.Row) ([]*AccessMappedRow, error) {
@@ -125,6 +200,16 @@ func convertToAccess(raw interface{}, f config.FieldMap) (interface{}, error) {
 			return int16(0), nil
 		}
 		return int16(-1), nil
+	case "int_bool":
+		// Numeric 0/1 code in the legacy (e.g. PrecioControlado), not a Jet boolean (-1).
+		v, err := toAccessBoolReverse(raw)
+		if err != nil {
+			return int16(0), err
+		}
+		if v == int16(-1) {
+			return int16(1), nil
+		}
+		return int16(0), nil
 	case "float", "decimal":
 		return toFloat64(raw)
 	case "date":
@@ -212,7 +297,7 @@ func zeroForAccessType(t string) interface{} {
 		return int64(0)
 	case "string":
 		return ""
-	case "access_bool", "access_bool_inverse":
+	case "access_bool", "access_bool_inverse", "int_bool":
 		return int16(0)
 	case "float", "decimal":
 		return float64(0)
@@ -230,6 +315,9 @@ func zeroForAccessType(t string) interface{} {
 func AccessPKFromRow(row reader.Row, cfg *config.EntityConfig) string {
 	if cfg.PG.BusinessKey != "" {
 		if v, ok := row[cfg.PG.BusinessKey]; ok {
+			if v == nil {
+				return "" // a row created in PG without a legacy key
+			}
 			if t, isTime := v.(time.Time); isTime && NeedsDatePK(cfg) {
 				v = LocalCalendarDate(t)
 			}

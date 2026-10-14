@@ -10,6 +10,7 @@ import (
 	"github.com/lfsoft/sync/internal/config"
 	"github.com/lfsoft/sync/internal/guard"
 	"github.com/lfsoft/sync/internal/idmap"
+	"github.com/lfsoft/sync/internal/lookup"
 	"github.com/lfsoft/sync/internal/mapper"
 	"github.com/lfsoft/sync/internal/state"
 	"github.com/lfsoft/sync/internal/synclog"
@@ -58,6 +59,7 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 	if e.idmapR != nil {
 		fk = mapper.NewIDMapFKResolver(e.idmapR)
 	}
+	lk := lookup.New(e.pool)
 
 	for i := range e.cfg.Entities {
 		ec := &e.cfg.Entities[i]
@@ -68,7 +70,7 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 		}
 
 		// Access → PG worker
-		w := NewWorker(e.pool, conn, ec, e.cfg.MdbBasePath, e.stateR, e.synclogR, e.guard, fk, e.log, dryRun)
+		w := NewWorker(e.pool, conn, ec, e.cfg.MdbBasePath, e.stateR, e.synclogR, e.guard, fk, lk, e.log, dryRun)
 		e.workers = append(e.workers, w)
 		wg.Add(1)
 		go func(w *Worker) {
@@ -78,7 +80,7 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 
 		// PG → Access worker
 		if ec.Sync.Direction == "both" || ec.Sync.Direction == "pg_to_access" {
-			pw := NewPGWorker(e.pool, conn, ec, e.stateR, e.synclogR, e.idmapR, e.guard, fk, e.log, dryRun)
+			pw := NewPGWorker(e.pool, conn, ec, e.stateR, e.synclogR, e.idmapR, e.guard, fk, lk, e.log, dryRun)
 			e.pgWorkers[ec.Entity] = pw
 			wg.Add(1)
 			go func(pw *PGWorker) {

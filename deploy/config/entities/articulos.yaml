@@ -17,6 +17,7 @@ detection:
   access_to_pg: max_pk
   pg_to_access: trigger
   full_scan_interval: 5m
+  change_scan_interval: 5s
 
 fields:
   - access: Articulo_Codigo
@@ -260,6 +261,6 @@ fields:
     type: access_bool_inverse
 
 sync:
-  interval: 10s
+  interval: 3s
   batch_size: 100
   direction: both

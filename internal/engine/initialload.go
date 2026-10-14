@@ -28,6 +28,7 @@ func RunInitialLoad(
 	synclogR *synclog.Repository,
 	idmapR *idmap.Repository,
 	fk mapper.FKResolver,
+	lk mapper.LookupResolver,
 	log *zap.SugaredLogger,
 ) error {
 	log = log.With("entity", cfg.Entity)
@@ -50,44 +51,40 @@ func RunInitialLoad(
 	}
 	log.Infow("read from access", "rows", len(rows))
 
-	m := mapper.NewForward(cfg)
-	if fk != nil {
-		m = m.WithFK(ctx, fk)
-	}
-	mapped, err := m.MapBatch(rows)
-	if err != nil {
-		return fmt.Errorf("map: %w", err)
-	}
-
+	res := mapper.Resolvers{Ctx: ctx, FK: fk, Lookup: lk}
 	w := writer.NewPG(pool, cfg)
 	totalWritten := 0
 
-	for i := 0; i < len(mapped); i += bulkBatchSize {
-		end := i + bulkBatchSize
-		if end > len(mapped) {
-			end = len(mapped)
-		}
-		batch := mapped[i:end]
-
-		written, err := w.BulkInsert(ctx, batch)
+	if len(cfg.Children) > 0 {
+		// Documents go through the same path as the worker: COPY can't attach child rows to
+		// the identity values of their parents.
+		totalWritten, err = initialLoadDocuments(ctx, w, &docBuilder{cfg: cfg, reader: r, res: res}, rows, log)
 		if err != nil {
-			return fmt.Errorf("bulk insert batch %d-%d: %w", i, end, err)
+			return err
 		}
-		totalWritten += written
-		log.Infow("batch inserted", "from", i, "to", end, "written", written)
+	} else {
+		mapped, err := mapper.NewForward(cfg).With(res).MapBatch(rows)
+		if err != nil {
+			return fmt.Errorf("map: %w", err)
+		}
+		for i := 0; i < len(mapped); i += bulkBatchSize {
+			end := i + bulkBatchSize
+			if end > len(mapped) {
+				end = len(mapped)
+			}
+			written, err := w.BulkInsert(ctx, mapped[i:end])
+			if err != nil {
+				return fmt.Errorf("bulk insert batch %d-%d: %w", i, end, err)
+			}
+			totalWritten += written
+			log.Infow("batch inserted", "from", i, "to", end, "written", written)
+		}
 	}
 
 	// Register id_map for legacyCode entities
 	if cfg.NeedsIDMap() && idmapR != nil {
 		if err := registerIDMaps(ctx, pool, cfg, idmapR, log); err != nil {
 			log.Warnw("id_map registration failed", "err", err)
-		}
-	}
-
-	// Load children for document entities
-	if len(cfg.Children) > 0 {
-		if err := initialLoadChildren(ctx, pool, conn, cfg, rows, log); err != nil {
-			return fmt.Errorf("initial load children: %w", err)
 		}
 	}
 
@@ -167,57 +164,33 @@ func registerIDMaps(ctx context.Context, pool *pgxpool.Pool, cfg *config.EntityC
 	return pgRows.Err()
 }
 
-func initialLoadChildren(ctx context.Context, pool *pgxpool.Pool, conn *accessdb.Conn, cfg *config.EntityConfig, parentRows []reader.Row, log *zap.SugaredLogger) error {
-	r := reader.New(conn, cfg)
-	w := writer.NewPG(pool, cfg)
-
-	for ci := range cfg.Children {
-		childCfg := &cfg.Children[ci]
-		childMapper := mapper.NewChildForward(childCfg)
-		totalChildren := 0
-
-		for _, parentRow := range parentRows {
-			parentPK := fmt.Sprintf("%v", parentRow[cfg.Access.PK])
-			childRows, err := r.ReadChildren(ctx, childCfg, parentPK)
-			if err != nil {
-				log.Warnw("read children failed", "child", childCfg.Entity, "parent_pk", parentPK, "err", err)
-				continue
-			}
-			if len(childRows) == 0 {
-				continue
-			}
-
-			parentMapped, err := mapper.NewForward(cfg).Map(parentRow)
-			if err != nil {
-				log.Warnw("map parent for child resolution", "err", err)
-				continue
-			}
-
-			var childMapped []*mapper.MappedRow
-			for _, cr := range childRows {
-				cm, err := childMapper.Map(cr)
-				if err != nil {
-					log.Warnw("map child failed", "child", childCfg.Entity, "err", err)
-					continue
-				}
-				childMapped = append(childMapped, cm)
-			}
-
-			if len(childMapped) > 0 {
-				childrenData := map[string][]*mapper.MappedRow{
-					childCfg.Entity: childMapped,
-				}
-				singleChild := []config.ChildConfig{*childCfg}
-				if err := w.UpsertDocument(ctx, parentMapped, singleChild, childrenData); err != nil {
-					log.Warnw("upsert children failed", "child", childCfg.Entity, "parent_pk", parentPK, "err", err)
-					continue
-				}
-				totalChildren += len(childMapped)
-			}
+// initialLoadDocuments writes the documents in batches. A document that fails to map or write
+// is logged and skipped; the worker retries it on its periodic scan.
+func initialLoadDocuments(ctx context.Context, w *writer.PGWriter, b *docBuilder, rows []reader.Row, log *zap.SugaredLogger) (int, error) {
+	written, failed := 0, 0
+	for start := 0; start < len(rows); start += docBatchSize {
+		end := start + docBatchSize
+		if end > len(rows) {
+			end = len(rows)
 		}
-		log.Infow("children loaded", "child_entity", childCfg.Entity, "total", totalChildren)
+		docs, err := b.build(ctx, rows[start:end])
+		if err != nil {
+			return written, fmt.Errorf("read children batch %d-%d: %w", start, end, err)
+		}
+		for _, d := range docs {
+			if d.err == nil {
+				d.err = w.UpsertDocument(ctx, d.doc)
+			}
+			if d.err != nil {
+				failed++
+				log.Warnw("document skipped", "pk", d.pk, "err", d.err)
+				continue
+			}
+			written++
+		}
+		log.Infow("documents loaded", "from", start, "to", end, "written", written, "failed", failed)
 	}
-	return nil
+	return written, nil
 }
 
 func countPG(ctx context.Context, pool *pgxpool.Pool, cfg *config.EntityConfig) (int64, error) {

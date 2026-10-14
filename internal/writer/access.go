@@ -46,9 +46,10 @@ func (w *AccessWriter) Insert(ctx context.Context, row *mapper.AccessMappedRow) 
 	return err
 }
 
-func (w *AccessWriter) Update(ctx context.Context, row *mapper.AccessMappedRow) error {
+// Update returns the number of Access rows matched by the PK.
+func (w *AccessWriter) Update(ctx context.Context, row *mapper.AccessMappedRow) (int64, error) {
 	if row.AccessPK == "" {
-		return fmt.Errorf("no PK value for update")
+		return 0, fmt.Errorf("no PK value for update")
 	}
 
 	var setClauses []string
@@ -59,7 +60,7 @@ func (w *AccessWriter) Update(ctx context.Context, row *mapper.AccessMappedRow) 
 		setClauses = append(setClauses, fmt.Sprintf("%s = %s", col, mapper.FormatAccessValue(row.AccessVals[i])))
 	}
 	if len(setClauses) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	q := fmt.Sprintf("UPDATE %s SET %s WHERE %s",
@@ -67,8 +68,11 @@ func (w *AccessWriter) Update(ctx context.Context, row *mapper.AccessMappedRow) 
 		strings.Join(setClauses, ", "),
 		w.formatPKWhere(row.AccessPK),
 	)
-	_, err := w.conn.Exec(ctx, q)
-	return err
+	res, err := w.conn.Exec(ctx, q)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (w *AccessWriter) Delete(ctx context.Context, accessPK string) (int64, error) {

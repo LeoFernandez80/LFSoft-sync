@@ -19,6 +19,7 @@ import (
 	"github.com/lfsoft/sync/internal/engine"
 	"github.com/lfsoft/sync/internal/guard"
 	"github.com/lfsoft/sync/internal/idmap"
+	"github.com/lfsoft/sync/internal/lookup"
 	"github.com/lfsoft/sync/internal/mapper"
 	"github.com/lfsoft/sync/internal/state"
 	"github.com/lfsoft/sync/internal/synclog"
@@ -123,7 +124,7 @@ func runSync(cfgPath, initialLoad string, dryRun bool, stop chan struct{}) {
 		if idmapRepo != nil {
 			fk = mapper.NewIDMapFKResolver(idmapRepo)
 		}
-		if err := engine.RunInitialLoad(ctx, pool, conn, entityCfg, stateRepo, synclogRepo, idmapRepo, fk, log); err != nil {
+		if err := engine.RunInitialLoad(ctx, pool, conn, entityCfg, stateRepo, synclogRepo, idmapRepo, fk, lookup.New(pool), log); err != nil {
 			log.Fatalf("initial load: %v", err)
 		}
 		log.Infow("initial load complete", "entity", initialLoad)

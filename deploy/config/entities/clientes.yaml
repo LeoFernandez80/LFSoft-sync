@@ -3,8 +3,9 @@
 #
 # Clave: Cliente_Codigo = customer_legacyCode. Los clientes dados de alta en la app no tienen
 # codigo legacy: quedan solo en PG (el worker PG -> Access los saltea).
-# PG -> Access escribe solo la cabecera y solo las columnas mapeadas; las colecciones viajan
-# solo Access -> PG (Access manda sobre ellas).
+# PG -> Access escribe el documento entero (cabecera y colecciones), solo las columnas
+# mapeadas. Los clientes creados en la app reciben codigo legacy (MAX + 1, generate_key) y los
+# contactos nuevos Id_Contacto (MAX + 1 de la tabla).
 # Mapeo tomado de LFSoft-app/database/sales/migrations/V021__seed_customers y de
 # PSB Hidramic (Modulo Clientes.bas / Modulo Subclientes.bas).
 #
@@ -13,6 +14,7 @@
 # entrega intermedia del subcliente (el legacy tiene un solo Pais_Codigo).
 entity: customers
 enabled: true
+load_order: 40
 
 access:
   mdb: Clientes.mdb
@@ -418,7 +420,6 @@ children:
   # No se borran en PG los que faltan en Access: la app tambien crea destinos, y contactos y
   # presupuestos los referencian.
   - entity: subClients
-    direction: access_to_pg
     access:
       table: SubClientes
       pk: SubCliente_Codigo
@@ -800,7 +801,6 @@ children:
 
   # ------------------------------------------------- Jurisdicciones de Convenio Multilateral
   - entity: customerTaxJurisdictions
-    direction: access_to_pg
     access:
       table: Jurisdicciones de IIBB
       pk: Provincia_CodigoCM
@@ -832,11 +832,12 @@ children:
   # Por eso son una coleccion del cliente y no una entidad propia.
   # No se borran en PG los que faltan en Access: la app tambien crea contactos.
   - entity: contacts
-    direction: access_to_pg
     access:
       table: Contactos
       pk: Id_Contacto
       parent_fk: cliente
+      # El legacy numera Id_Contacto sobre toda la tabla.
+      generate_key: global
     postgres:
       table: contacts
       pk: contact_id
@@ -861,6 +862,8 @@ children:
             JOIN sales."customers" c ON c."customer_id" = s."subClient_customer_id"
             WHERE c."customer_legacyCode" = $1::int AND s."subClient_code" = $2::int
           args: [cliente, SubCliente_Codigo]
+          reverse_query: >-
+            SELECT s."subClient_code" FROM sales."subClients" s WHERE s."subClient_id" = $1
 
       # Texto SI/NO en el legacy.
       - access: activo
@@ -1004,6 +1007,10 @@ children:
         type: int
         nullable: true
         split: {sep: "/", index: 0}
+        # PG -> Access: vuelve a armar "dd/mm"; sin dia o mes, la mascara vacia del legacy.
+        reverse_from: [contact_birthDay, contact_birthMonth]
+        reverse_format: "%02d/%02d"
+        reverse_empty: "__/__"
 
       - access: FechaCumpleaños
         pg: contact_birthMonth
@@ -1066,3 +1073,4 @@ sync:
   interval: 3s
   batch_size: 100
   direction: both
+  generate_key: true

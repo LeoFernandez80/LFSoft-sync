@@ -1,0 +1,42 @@
+# Unidades de medida (Articulo.mdb, [Unidades Medida]) <-> articulos."unidadesMedida".
+# PK directa: unidadMedida_id = UnidadMedida_Codigo (codigos por /sync/next-id/unidades).
+entity: unidades
+enabled: true
+load_order: 10
+
+access:
+  mdb: Articulo.mdb
+  table: "[Unidades Medida]"
+  pk: UnidadMedida_Codigo
+  pk_type: long
+
+postgres:
+  schema: articulos
+  table: unidadesMedida
+  pk: unidadMedida_id
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 30m
+  change_scan_interval: 30s
+
+fields:
+  - access: UnidadMedida_Codigo
+    pg: unidadMedida_id
+    type: int
+
+  - access: UnidadMedida_Descripcion
+    pg: unidadMedida_descripcion
+    type: string
+    transform: trim
+
+  - access: UnidadMedida_Abreviatura
+    pg: unidadMedida_abreviatura
+    type: string
+    transform: trim
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

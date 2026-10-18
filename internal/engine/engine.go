@@ -13,6 +13,7 @@ import (
 	"github.com/lfsoft/sync/internal/lookup"
 	"github.com/lfsoft/sync/internal/mapper"
 	"github.com/lfsoft/sync/internal/state"
+	"github.com/lfsoft/sync/internal/stock"
 	"github.com/lfsoft/sync/internal/synclog"
 	"go.uber.org/zap"
 )
@@ -28,6 +29,7 @@ type Engine struct {
 	log       *zap.SugaredLogger
 	workers   []*Worker
 	pgWorkers map[string]*PGWorker
+	stock     map[string]*stock.Syncer
 }
 
 func New(
@@ -50,6 +52,7 @@ func New(
 		guard:     g,
 		log:       log,
 		pgWorkers: make(map[string]*PGWorker),
+		stock:     make(map[string]*stock.Syncer),
 	}
 }
 
@@ -66,6 +69,25 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 		conn, ok := e.conns[ec.Access.MDB]
 		if !ok {
 			e.log.Warnw("no mdb connection for entity, skipping", "entity", ec.Entity, "mdb", ec.Access.MDB)
+			continue
+		}
+
+		// Stock movements have their own synchronizer (see internal/stock).
+		if ec.Kind == "stock_movements" {
+			sy := stock.New(e.pool, conn, ec, e.cfg.MdbBasePath, e.stateR, e.synclogR, e.log, dryRun)
+			e.stock[ec.Entity] = sy
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sy.RunAccessToPG(ctx)
+			}()
+			if ec.Sync.Direction == "both" || ec.Sync.Direction == "pg_to_access" {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					sy.RunPGToAccess(ctx)
+				}()
+			}
 			continue
 		}
 
@@ -99,6 +121,9 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 			case <-ctx.Done():
 				return
 			case entity := <-listener.C():
+				if sy, ok := e.stock[entity]; ok {
+					sy.Trigger()
+				}
 				if pw, ok := e.pgWorkers[entity]; ok {
 					pw.Trigger()
 				}

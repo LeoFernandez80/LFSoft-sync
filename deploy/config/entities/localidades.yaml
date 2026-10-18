@@ -1,0 +1,70 @@
+# Localidades (Clientes.mdb) <-> utilities.localities, ida y vuelta.
+# En Access la clave es compuesta (Codigo_Postal, Pais_Codigo): por eso las localidades son una
+# coleccion del pais. Esta entidad usa el pais solo como raiz (no escribe sus columnas: eso lo
+# hace paises.yaml) y va despues de provincias, porque cada localidad resuelve su provincia.
+# En PG se identifican por (locality_country_id, locality_postalCode), el UQ de utilities V019.
+# No se borran en PG las que falten en Access ni en Access las que falten en PG.
+entity: localities
+enabled: true
+load_order: 16
+
+access:
+  mdb: Clientes.mdb
+  table: Pais
+  pk: Pais_Codigo
+  pk_type: byte
+
+postgres:
+  schema: utilities
+  table: countries
+  pk: country_id
+  business_key: country_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: Pais_Codigo
+    pg: country_legacyCode
+    type: int
+
+children:
+  - entity: localities
+    access:
+      table: Localidades
+      pk: Codigo_Postal
+      parent_fk: Pais_Codigo
+    postgres:
+      table: localities
+      pk: locality_id
+      parent_fk: locality_country_id
+      conflict: [locality_country_id, locality_postalCode]
+      delete_missing: false
+    fields:
+      - access: Codigo_Postal
+        pg: locality_postalCode
+        type: string
+        transform: trim
+
+      - access: Localidad_Nombre
+        pg: locality_name
+        type: string
+        transform: trim
+
+      - access: Provincia_Codigo
+        pg: locality_province_id
+        type: int
+        lookup:
+          table: utilities.provinces
+          match: province_legacyCode
+          select: province_id
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both
+  # Los paises los da de alta y baja paises.yaml.
+  delete_missing: false

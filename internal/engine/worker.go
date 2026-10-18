@@ -41,6 +41,9 @@ type Worker struct {
 	// rootWritten maps Access PK → fingerprint of a document's root row alone, so a
 	// change-triggered full scan reads children only for roots that changed.
 	rootWritten map[string]string
+	// failedRoots lists the document roots (Access PK) the last syncDocuments call could not
+	// read, map or write; the initial sync retries just those.
+	failedRoots []string
 }
 
 const (
@@ -106,7 +109,9 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
-func (w *Worker) cycle(ctx context.Context) {
+// cycle runs one detect → read → write round. It returns the round's log entry, or nil when the
+// detector found nothing to do.
+func (w *Worker) cycle(ctx context.Context) *synclog.Entry {
 	start := time.Now()
 	entry := &synclog.Entry{
 		Entity:    w.entity.Entity,
@@ -118,12 +123,12 @@ func (w *Worker) cycle(ctx context.Context) {
 	result, err := w.detector.Detect(ctx)
 	if err != nil {
 		w.handleError(ctx, entry, start, fmt.Errorf("detect: %w", err))
-		return
+		return entry
 	}
 
 	if result.Action == detector.ActionNone {
 		w.consecutiveErrors = 0
-		return
+		return nil
 	}
 
 	var rows []reader.Row
@@ -141,7 +146,7 @@ func (w *Worker) cycle(ctx context.Context) {
 	}
 	if err != nil {
 		w.handleError(ctx, entry, start, fmt.Errorf("read: %w", err))
-		return
+		return entry
 	}
 
 	entry.Detected = len(rows)
@@ -173,10 +178,16 @@ func (w *Worker) cycle(ctx context.Context) {
 		if err := w.synclogR.Insert(ctx, entry); err != nil {
 			w.log.Warnw("synclog insert failed", "err", err)
 		}
-		return
+		return entry
 	}
 
 	writeMs := time.Since(writeStart).Milliseconds()
+
+	if col := w.entity.Sync.BumpSequence; col != "" && entry.Written > 0 && !w.dryRun {
+		if err := w.writer.BumpSequence(ctx, col); err != nil {
+			w.log.Warnw("bump sequence failed", "column", col, "err", err)
+		}
+	}
 
 	// Handle deletes on full scan
 	if result.Action == detector.ActionFullScan && !w.dryRun && w.entity.DeletesMissing() {
@@ -185,7 +196,24 @@ func (w *Worker) cycle(ctx context.Context) {
 		for _, row := range rows {
 			accessPKs = append(accessPKs, fmt.Sprintf("%v", row[w.entity.Access.PK]))
 		}
-		deleted, err := w.writer.DeleteMissing(ctx, accessPKs)
+		recheck := func(cands []string) ([]string, error) {
+			found, err := w.reader.ReadByPKs(ctx, cands)
+			if err != nil {
+				return nil, err
+			}
+			present := make(map[string]bool, len(found))
+			for _, r := range found {
+				present[fmt.Sprintf("%v", r[w.entity.Access.PK])] = true
+			}
+			var gone []string
+			for _, k := range cands {
+				if !present[k] {
+					gone = append(gone, k)
+				}
+			}
+			return gone, nil
+		}
+		deleted, err := w.writer.DeleteMissing(ctx, accessPKs, recheck)
 		if err != nil {
 			w.log.Warnw("delete missing failed", "err", err)
 		} else if deleted > 0 {
@@ -236,6 +264,7 @@ func (w *Worker) cycle(ctx context.Context) {
 		"written", entry.Written,
 		"duration_ms", entry.DurationMs,
 	)
+	return entry
 }
 
 func (w *Worker) resolvers(ctx context.Context) mapper.Resolvers {
@@ -351,6 +380,7 @@ func (w *Worker) syncDocuments(ctx context.Context, rows []reader.Row, entry *sy
 
 	b := &docBuilder{cfg: w.entity, reader: w.reader, res: w.resolvers(ctx)}
 	ok := true
+	w.failedRoots = w.failedRoots[:0]
 	for start := 0; start < len(rows); start += docBatchSize {
 		end := start + docBatchSize
 		if end > len(rows) {
@@ -359,6 +389,9 @@ func (w *Worker) syncDocuments(ctx context.Context, rows []reader.Row, entry *sy
 		docs, err := b.build(ctx, rows[start:end])
 		if err != nil {
 			w.log.Errorw("read document children failed", "err", err)
+			for _, row := range rows[start:end] {
+				w.failedRoots = append(w.failedRoots, fmt.Sprintf("%v", row[w.entity.Access.PK]))
+			}
 			entry.Errors++
 			setErrorDetail(entry, fmt.Errorf("read children: %w", err))
 			ok = false
@@ -367,6 +400,7 @@ func (w *Worker) syncDocuments(ctx context.Context, rows []reader.Row, entry *sy
 		for _, d := range docs {
 			if d.err != nil {
 				w.log.Warnw("map document failed", "pk", d.pk, "err", d.err)
+				w.failedRoots = append(w.failedRoots, d.pk)
 				entry.Errors++
 				setErrorDetail(entry, fmt.Errorf("map pk=%s: %w", d.pk, d.err))
 				continue
@@ -380,8 +414,16 @@ func (w *Worker) syncDocuments(ctx context.Context, rows []reader.Row, entry *sy
 				w.log.Infow("dry-run: would write document", "pk", d.pk, "children", countChildren(d.doc))
 				continue
 			}
+			// The PG -> Access worker may have written this document after it was read here (a
+			// line added in the app): writing the older Access copy would delete that line in PG.
+			// The next scan reads it again.
+			if w.guard.IsRecentlyWritten(w.entity.Entity, d.pk) {
+				entry.Skipped++
+				continue
+			}
 			if err := w.writer.UpsertDocument(ctx, d.doc); err != nil {
 				w.log.Warnw("write document failed", "pk", d.pk, "err", err)
+				w.failedRoots = append(w.failedRoots, d.pk)
 				entry.Errors++
 				setErrorDetail(entry, fmt.Errorf("write pk=%s: %w", d.pk, err))
 				continue
@@ -392,6 +434,31 @@ func (w *Worker) syncDocuments(ctx context.Context, rows []reader.Row, entry *sy
 		}
 	}
 	return ok
+}
+
+// retryRoots syncs again only the given document roots (Access PKs), always writing them. The
+// initial sync uses it for the documents that failed its first pass.
+func (w *Worker) retryRoots(ctx context.Context, pks []string) *synclog.Entry {
+	start := time.Now()
+	entry := &synclog.Entry{Entity: w.entity.Entity, Direction: "access_to_pg", StartedAt: start, Strategy: "retry"}
+	rows, err := w.reader.ReadByPKs(ctx, pks)
+	if err != nil {
+		w.handleError(ctx, entry, start, fmt.Errorf("read: %w", err))
+		return entry
+	}
+	entry.Detected = len(rows)
+	w.syncDocuments(ctx, rows, entry, false, true)
+	if col := w.entity.Sync.BumpSequence; col != "" && entry.Written > 0 && !w.dryRun {
+		if err := w.writer.BumpSequence(ctx, col); err != nil {
+			w.log.Warnw("bump sequence failed", "column", col, "err", err)
+		}
+	}
+	entry.FinishedAt = time.Now()
+	entry.DurationMs = int(time.Since(start).Milliseconds())
+	if err := w.synclogR.Insert(ctx, entry); err != nil {
+		w.log.Warnw("synclog insert failed", "err", err)
+	}
+	return entry
 }
 
 func (w *Worker) rememberRoot(d built) {

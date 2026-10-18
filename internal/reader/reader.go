@@ -66,15 +66,38 @@ func (r *AccessReader) ReadSince(ctx context.Context, lastMaxPK string) ([]Row, 
 	return r.query(ctx, cols, q)
 }
 
+// ReadByPKs reads the root rows with these PKs (as the worker prints them), in chunks.
 func (r *AccessReader) ReadByPKs(ctx context.Context, pks []string) ([]Row, error) {
-	if len(pks) == 0 {
-		return nil, nil
-	}
 	cols := r.accessColumns()
-	q := fmt.Sprintf("SELECT %s FROM %s%s",
-		strings.Join(bracketed(cols), ", "), r.cfg.Access.Table,
-		r.where(fmt.Sprintf("%s IN (%s)", r.cfg.Access.PK, strings.Join(pks, ","))))
-	return r.query(ctx, cols, q)
+	text := false
+	switch strings.ToLower(r.cfg.Access.PKType) {
+	case "text", "string", "memo":
+		text = true
+	}
+	var result []Row
+	for start := 0; start < len(pks); start += childInChunk {
+		end := start + childInChunk
+		if end > len(pks) {
+			end = len(pks)
+		}
+		list := make([]string, 0, end-start)
+		for _, pk := range pks[start:end] {
+			if text {
+				list = append(list, jetLiteral(pk))
+			} else {
+				list = append(list, pk)
+			}
+		}
+		q := fmt.Sprintf("SELECT %s FROM %s%s",
+			strings.Join(bracketed(cols), ", "), r.cfg.Access.Table,
+			r.where(fmt.Sprintf("%s IN (%s)", bracket(r.cfg.Access.PK), strings.Join(list, ","))))
+		rows, err := r.query(ctx, cols, q)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, rows...)
+	}
+	return result, nil
 }
 
 // ReadSinceTimestamp reads rows modified since the given timestamp.
@@ -97,6 +120,17 @@ func (r *AccessReader) ReadSinceTimestamp(ctx context.Context, since time.Time) 
 			strings.Join(bracketed(cols), ", "), r.cfg.Access.Table, r.where(fmt.Sprintf("%s >= %s", tsCol, jetDateTime)))
 	}
 	return r.query(ctx, cols, q)
+}
+
+// QueryOne runs a single-row query and scans it in one trip to the connection's COM thread.
+// accessdb.Conn.QueryRow keeps a pooled connection until Scan, which is a second trip: with more
+// goroutines than pool connections (5) on one .mdb — several entities plus their PG workers and
+// the next-id handler — the thread blocks waiting for the pool while the Scans that would free
+// it queue behind it, and every worker on that .mdb hangs.
+func QueryOne(ctx context.Context, conn *accessdb.Conn, q string, dest ...interface{}) error {
+	return conn.WithLock(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx, q).Scan(dest...)
+	})
 }
 
 // where builds the WHERE clause of a root query: cond plus the entity's access.filter.

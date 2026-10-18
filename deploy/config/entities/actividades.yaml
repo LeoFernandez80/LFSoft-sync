@@ -1,0 +1,49 @@
+# Actividades (Utilidades.mdb) <-> articulos.actividades. Clave: Actividad_Codigo =
+# actividad_codigo (APRA01, APRB02...), el codigo con el que el negocio las nombra y con el que
+# los items de presupuesto resuelven su actividad. articulos V014 siembra las 30 del legacy;
+# el sync las completa y corrige.
+# Sin mapear (quedan en Access): Representa, Observaciones, Definicion, Implica,
+# ImplicaProvisorio, PTGNumero, PTGVersion. actividad_isActive no existe en el legacy.
+entity: actividades
+enabled: true
+load_order: 12
+
+access:
+  mdb: Utilidades.mdb
+  table: Actividades
+  pk: Actividad_Codigo
+  pk_type: text
+
+postgres:
+  schema: articulos
+  table: actividades
+  pk: actividad_id
+  business_key: actividad_codigo
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 1m
+
+fields:
+  - access: Actividad_Codigo
+    pg: actividad_codigo
+    type: string
+    transform: trim
+
+  - access: Actividad_Descripcion
+    pg: actividad_descripcion
+    type: string
+    transform: trim
+
+  # Color RGB como entero de VB6 (Long); PG lo guarda como texto, igual que el seed.
+  - access: Actividad_ColorHojaRGB
+    pg: actividad_colorHojaRgb
+    type: string
+    nullable: true
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

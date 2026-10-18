@@ -101,16 +101,33 @@ func writeAccessChildren(ctx context.Context, db *sql.DB, cfgs []config.ChildCon
 			if !ok || pkVal == nil {
 				return fmt.Errorf("%s: row without %s", ch.Access.Table, ch.Access.PK)
 			}
-			keys := append(append([]keyCol{}, pk...), keyCol{ch.Access.PK, pkVal})
+			keys := append([]keyCol{}, pk...)
+			keyVals := make([]interface{}, 0, 1+len(ch.Access.Keys))
+			for _, col := range ch.Access.KeyColumns() {
+				v, ok := r.Row.Value(col)
+				if !ok || v == nil {
+					return fmt.Errorf("%s: row without %s", ch.Access.Table, col)
+				}
+				keys = append(keys, keyCol{col, v})
+				keyVals = append(keyVals, v)
+			}
+			// Collections without a key in Access (sum_on_duplicate) keep one PG row per key for
+			// several Access rows: those rows are replaced by the single PG one, never updated
+			// one by one (each would get the summed quantity).
+			if len(ch.PG.SumOnDuplicate) > 0 {
+				if _, err := db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s", bracket(ch.Access.Table), keyWhere(keys))); err != nil {
+					return fmt.Errorf("%s %v/%v: replace: %w", ch.Access.Table, parentVal, pkVal, err)
+				}
+			}
 			if err := upsertAccessRow(ctx, db, ch.Access.Table, keys, r.Row); err != nil {
 				return fmt.Errorf("%s %v/%v: %w", ch.Access.Table, parentVal, pkVal, err)
 			}
-			kept[lookup.Key(pkVal, true)] = true
+			kept[compositeKey(keyVals)] = true
 			if err := writeAccessChildren(ctx, db, ch.Children, rootVal, pkVal, false, r.Children); err != nil {
 				return err
 			}
 		}
-		if ch.PG.DeleteMissing {
+		if ch.PG.DeletesInAccess() {
 			if err := deleteSubtree(ctx, db, ch, rootVal, parentVal, topLevel, kept); err != nil {
 				return err
 			}
@@ -127,20 +144,29 @@ func deleteSubtree(ctx context.Context, db *sql.DB, ch *config.ChildConfig, root
 	}
 	pk := parentKeys(ch, rootVal, parentVal, topLevel)
 	where := keyWhere(pk)
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s", bracket(ch.Access.PK), bracket(ch.Access.Table), where)
+	keyCols := ch.Access.KeyColumns()
+	sel := make([]string, len(keyCols))
+	for i, c := range keyCols {
+		sel[i] = bracket(c)
+	}
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s", strings.Join(sel, ", "), bracket(ch.Access.Table), where)
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
 		return fmt.Errorf("%s: list for delete: %w", ch.Access.Table, err)
 	}
-	var stale []interface{}
+	var stale [][]interface{}
 	for rows.Next() {
-		var v interface{}
-		if err := rows.Scan(&v); err != nil {
+		vals := make([]interface{}, len(keyCols))
+		ptrs := make([]interface{}, len(keyCols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
 			rows.Close()
 			return err
 		}
-		if keep == nil || !keep[lookup.Key(v, true)] {
-			stale = append(stale, v)
+		if keep == nil || !keep[compositeKey(vals)] {
+			stale = append(stale, vals)
 		}
 	}
 	rows.Close()
@@ -148,19 +174,30 @@ func deleteSubtree(ctx context.Context, db *sql.DB, ch *config.ChildConfig, root
 		return err
 	}
 
-	for _, v := range stale {
+	for _, vals := range stale {
 		for i := range ch.Children {
-			if err := deleteSubtree(ctx, db, &ch.Children[i], rootVal, v, false, nil); err != nil {
+			if err := deleteSubtree(ctx, db, &ch.Children[i], rootVal, vals[0], false, nil); err != nil {
 				return err
 			}
 		}
-		keys := append(append([]keyCol{}, pk...), keyCol{ch.Access.PK, v})
-		where := keyWhere(keys)
-		if _, err := db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s", bracket(ch.Access.Table), where)); err != nil {
-			return fmt.Errorf("%s: delete %v: %w", ch.Access.Table, v, err)
+		keys := append([]keyCol{}, pk...)
+		for i, c := range keyCols {
+			keys = append(keys, keyCol{c, vals[i]})
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s", bracket(ch.Access.Table), keyWhere(keys))); err != nil {
+			return fmt.Errorf("%s: delete %v: %w", ch.Access.Table, vals, err)
 		}
 	}
 	return nil
+}
+
+// compositeKey normalizes a row's key values (Jet compares text case-insensitively).
+func compositeKey(vals []interface{}) string {
+	parts := make([]string, len(vals))
+	for i, v := range vals {
+		parts[i] = lookup.Key(v, true)
+	}
+	return strings.Join(parts, "|")
 }
 
 // upsertAccessRow updates the row matched by keys with the mapped values, or inserts it.
@@ -187,15 +224,17 @@ func upsertAccessRow(ctx context.Context, db *sql.DB, table string, keys []keyCo
 		if n, err := res.RowsAffected(); err == nil && n > 0 {
 			return nil
 		}
-	} else {
-		var n int64
-		q := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s", bracket(table), where)
-		if err := db.QueryRowContext(ctx, q).Scan(&n); err != nil {
-			return fmt.Errorf("exists: %w", err)
-		}
-		if n > 0 {
-			return nil
-		}
+	}
+	// RowsAffected through ADO is not reliable (Jet 4.0 on 32 bits always reports 0 even when
+	// the UPDATE matched), so confirm before inserting: on a table without a unique index the
+	// insert would silently duplicate the row.
+	var n int64
+	q := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s", bracket(table), where)
+	if err := db.QueryRowContext(ctx, q).Scan(&n); err != nil {
+		return fmt.Errorf("exists: %w", err)
+	}
+	if n > 0 {
+		return nil
 	}
 
 	cols := make([]string, 0, len(keys)+len(row.AccessCols))
@@ -211,7 +250,7 @@ func upsertAccessRow(ctx context.Context, db *sql.DB, table string, keys []keyCo
 		cols = append(cols, bracket(c))
 		vals = append(vals, mapper.FormatAccessValue(row.AccessVals[i]))
 	}
-	q := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", bracket(table), strings.Join(cols, ", "), strings.Join(vals, ", "))
+	q = fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", bracket(table), strings.Join(cols, ", "), strings.Join(vals, ", "))
 	if _, err := db.ExecContext(ctx, q); err != nil {
 		return fmt.Errorf("insert: %w", err)
 	}

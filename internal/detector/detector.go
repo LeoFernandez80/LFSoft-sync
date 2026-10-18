@@ -203,9 +203,8 @@ func (d *Detector) fullScan(ctx context.Context, st *state.SyncState, r *Result)
 
 func (d *Detector) maxAccessPK(ctx context.Context) (string, error) {
 	q := fmt.Sprintf("SELECT MAX(%s) FROM %s%s", d.cfg.Access.PK, d.cfg.Access.Table, reader.WhereClause("", d.cfg.Access.Filter))
-	row := d.conn.QueryRow(ctx, q)
 	var v interface{}
-	if err := row.Scan(&v); err != nil {
+	if err := reader.QueryOne(ctx, d.conn, q, &v); err != nil {
 		return "", err
 	}
 	if v == nil {
@@ -229,9 +228,8 @@ func (d *Detector) maxAccessPK(ctx context.Context) (string, error) {
 
 func (d *Detector) countAccess(ctx context.Context) (int64, error) {
 	q := fmt.Sprintf("SELECT COUNT(*) FROM %s%s", d.cfg.Access.Table, reader.WhereClause("", d.cfg.Access.Filter))
-	row := d.conn.QueryRow(ctx, q)
 	var c int64
-	if err := row.Scan(&c); err != nil {
+	if err := reader.QueryOne(ctx, d.conn, q, &c); err != nil {
 		return 0, err
 	}
 	return c, nil

@@ -24,6 +24,7 @@ import (
 )
 
 type PGWorker struct {
+	pool       *pgxpool.Pool
 	entity     *config.EntityConfig
 	pgChanges  *detector.PGChanges
 	reader     *reader.PGReader
@@ -56,6 +57,7 @@ func NewPGWorker(
 	dryRun bool,
 ) *PGWorker {
 	return &PGWorker{
+		pool:       pool,
 		entity:     cfg,
 		pgChanges:  detector.NewPGChanges(pool),
 		reader:     reader.NewPG(pool, cfg),
@@ -206,20 +208,23 @@ func (w *PGWorker) processInsert(ctx context.Context, ch detector.Change, entry 
 		return fmt.Errorf("read pg row %d: %w", ch.RowID, err)
 	}
 
-	mapped, err := w.revMapper(ctx).Map(row)
+	row, accessPK, err := w.ensureRootKey(ctx, ch.RowID, row)
 	if err != nil {
-		return fmt.Errorf("map row: %w", err)
+		return err
 	}
-
-	accessPK := mapper.AccessPKFromRow(row, w.entity)
 	if accessPK == "" {
 		if w.entity.PG.BusinessKey != "" {
-			// Created in PG without a legacy key (e.g. a customer added in the app): there is no
-			// Access row for it, so it stays PG-only.
+			// Created in PG without a legacy key and the entity doesn't generate one: there is
+			// no Access row for it, so it stays PG-only.
 			entry.Skipped++
 			return nil
 		}
 		return fmt.Errorf("could not determine access PK from PG row %d", ch.RowID)
+	}
+
+	mapped, err := w.revMapper(ctx).Map(row)
+	if err != nil {
+		return fmt.Errorf("map row: %w", err)
 	}
 
 	if w.dryRun {
@@ -271,20 +276,23 @@ func (w *PGWorker) processUpdate(ctx context.Context, ch detector.Change, entry 
 		return fmt.Errorf("read pg row %d: %w", ch.RowID, err)
 	}
 
-	mapped, err := w.revMapper(ctx).Map(row)
+	row, accessPK, err := w.ensureRootKey(ctx, ch.RowID, row)
 	if err != nil {
-		return fmt.Errorf("map row: %w", err)
+		return err
 	}
-
-	accessPK := mapper.AccessPKFromRow(row, w.entity)
 	if accessPK == "" {
 		if w.entity.PG.BusinessKey != "" {
-			// Created in PG without a legacy key (e.g. a customer added in the app): there is no
-			// Access row for it, so it stays PG-only.
+			// Created in PG without a legacy key and the entity doesn't generate one: there is
+			// no Access row for it, so it stays PG-only.
 			entry.Skipped++
 			return nil
 		}
 		return fmt.Errorf("could not determine access PK from PG row %d", ch.RowID)
+	}
+
+	mapped, err := w.revMapper(ctx).Map(row)
+	if err != nil {
+		return fmt.Errorf("map row: %w", err)
 	}
 
 	if w.dryRun {
@@ -299,6 +307,16 @@ func (w *PGWorker) processUpdate(ctx context.Context, ch detector.Change, entry 
 		return fmt.Errorf("update access: %w", err)
 	}
 	if n == 0 {
+		// ADO's RowsAffected is not reliable (0 even when the UPDATE matched): confirm first, or
+		// a table without a unique index in Access would get a duplicate row.
+		exists, err := w.writer.Exists(ctx, accessPK)
+		if err != nil {
+			return fmt.Errorf("check exists: %w", err)
+		}
+		if exists {
+			entry.Written++
+			return nil
+		}
 		// Row missing in Access (or PK mismatch): insert so the change isn't silently lost.
 		w.log.Warnw("update matched no rows in access, inserting", "access_pk", accessPK, "row_id", ch.RowID)
 		if err := w.writer.Insert(ctx, mapped); err != nil {
@@ -403,4 +421,64 @@ func (w *PGWorker) handleError(ctx context.Context, entry *synclog.Entry, start 
 	entry.FinishedAt = time.Now()
 	entry.DurationMs = int(time.Since(start).Milliseconds())
 	_ = w.synclogR.Insert(ctx, entry)
+}
+
+// ensureRootKey returns the row's Access key. A row created in the app without business key
+// gets one when the entity has sync.generate_key: MAX(Access PK, PG key) + 1, skipping values
+// Access already has, stored in PG (sync.is_writing, so the trigger doesn't queue it again).
+func (w *PGWorker) ensureRootKey(ctx context.Context, rowID int64, row reader.Row) (reader.Row, string, error) {
+	accessPK := mapper.AccessPKFromRow(row, w.entity)
+	if accessPK != "" || w.entity.PG.BusinessKey == "" || !w.entity.Sync.GenerateKey {
+		return row, accessPK, nil
+	}
+	accessMax, err := w.writer.MaxValue(ctx, w.entity.Access.Table, w.entity.Access.PK, "")
+	if err != nil {
+		return nil, "", fmt.Errorf("generate key: access max: %w", err)
+	}
+	var pgMax int64
+	q := fmt.Sprintf(`SELECT COALESCE(MAX("%s"), 0)::bigint FROM %s."%s"`, w.entity.PG.BusinessKey, w.entity.PG.Schema, w.entity.PG.Table)
+	if err := w.pool.QueryRow(ctx, q).Scan(&pgMax); err != nil {
+		return nil, "", fmt.Errorf("generate key: pg max: %w", err)
+	}
+	next := accessMax
+	if pgMax > next {
+		next = pgMax
+	}
+	next++
+	for i := 0; i < 1000; i++ {
+		exists, err := w.writer.Exists(ctx, fmt.Sprintf("%d", next))
+		if err != nil {
+			return nil, "", fmt.Errorf("generate key: %w", err)
+		}
+		if !exists {
+			break
+		}
+		next++
+	}
+	if err := w.setPGValue(ctx, w.entity.PG.Table, w.entity.PG.BusinessKey, w.entity.PG.PK, rowID, next); err != nil {
+		return nil, "", fmt.Errorf("generate key: %w", err)
+	}
+	w.log.Infow("legacy key generated for row created in the app", "row_id", rowID, "key", next)
+	row, err = w.reader.ReadByID(ctx, rowID)
+	if err != nil {
+		return nil, "", err
+	}
+	return row, mapper.AccessPKFromRow(row, w.entity), nil
+}
+
+// setPGValue writes one column of one PG row without queuing a sync change.
+func (w *PGWorker) setPGValue(ctx context.Context, table, col, pkCol string, id int64, v interface{}) error {
+	tx, err := w.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, "SET LOCAL sync.is_writing = 'true'"); err != nil {
+		return err
+	}
+	q := fmt.Sprintf(`UPDATE %s."%s" SET "%s" = $1 WHERE "%s" = $2`, w.entity.PG.Schema, table, col, pkCol)
+	if _, err := tx.Exec(ctx, q, v, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

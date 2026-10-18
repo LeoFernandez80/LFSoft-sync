@@ -1,0 +1,209 @@
+# Inventarios fisicos (Articulo.mdb: Inventario + [Detalle Inventario]) <->
+# articulos."stockInventories" + "stockInventoryLines", ida y vuelta (documento completo).
+# Clave: Inventario_Numero = stockInventory_number; cada linea es (inventario, Articulo_Pos), el
+# UQ (inventory_id, position) de articulos V022.
+# Los ajustes 7/58 que genera un inventario son movimientos de stock (movimientosStock.yaml):
+# stockInventoryLine_adjustmentMovement_id no existe en el legacy y queda solo en PG.
+# Sin mapear: Familia_Codigo (siempre 0), Valor_Pos/Valor_Neg (huerfanas) e [Inventario Final]
+# (cierre por grupo y ejercicio; en PG son columnas del inventario que el legacy no tiene).
+# Numeracion: el VB6 usa MAX+1 y la app stock_inventory_number_seq; bump_sequence la mantiene por
+# encima del MAX del legacy.
+entity: stockInventories
+enabled: true
+load_order: 57
+
+access:
+  mdb: Articulo.mdb
+  table: Inventario
+  pk: Inventario_Numero
+  pk_type: long
+
+postgres:
+  schema: articulos
+  table: stockInventories
+  pk: stockInventory_id
+  business_key: stockInventory_number
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  # Las etapas del conteo se graban en las lineas sin tocar la cabecera: las toma este barrido.
+  full_scan_interval: 10m
+  change_scan_interval: 1m
+
+fields:
+  - access: Inventario_Numero
+    pg: stockInventory_number
+    type: int
+
+  - access: Inventario_Fecha
+    pg: stockInventory_date
+    type: date
+
+  - access: Inventario_Fecha
+    pg: stockInventory_createdAt
+    type: date
+
+  - access: Inventario_Observacion
+    pg: stockInventory_observation
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Grupo_Codigo
+    pg: stockInventory_grupo_id
+    type: int
+
+  - access: Inventario_Fecha1
+    pg: stockInventory_stage1Date
+    type: date
+    nullable: true
+    null_before: "1900-01-01"
+
+  - access: Inventario_Fecha2
+    pg: stockInventory_stage2Date
+    type: date
+    nullable: true
+    null_before: "1900-01-01"
+
+  - access: Inventario_Dif
+    pg: stockInventory_diffCalculated
+    type: access_bool
+
+  - access: Inventario_DifC
+    pg: stockInventory_correctedDiffCalculated
+    type: access_bool
+
+  # Abierto = 1, cerrado = 2.
+  - access: Inventario_Abierto
+    pg: stockInventory_status
+    type: int
+    map:
+      "true": 1
+      "false": 2
+
+  - access: MontoAnterior
+    pg: stockInventory_systemAmount
+    type: decimal
+
+  - access: Monto
+    pg: stockInventory_adjustedAmount
+    type: decimal
+
+  - access: DifNeg
+    pg: stockInventory_pctItemsNeg
+    type: decimal
+
+  - access: DifPos
+    pg: stockInventory_pctItemsPos
+    type: decimal
+
+  - access: UnidDifNeg
+    pg: stockInventory_pctUnitsNeg
+    type: decimal
+
+  - access: UnidDifPos
+    pg: stockInventory_pctUnitsPos
+    type: decimal
+
+  - access: DifNegP
+    pg: stockInventory_pctCostNeg
+    type: decimal
+
+  - access: DifPosP
+    pg: stockInventory_pctCostPos
+    type: decimal
+
+  - access: IndiceU
+    pg: stockInventory_rotationIndexUnits
+    type: decimal
+
+  - access: IndiceM
+    pg: stockInventory_rotationIndexCost
+    type: decimal
+
+children:
+  - entity: stockInventoryLines
+    access:
+      table: Detalle Inventario
+      pk: Articulo_Pos
+      parent_fk: Inventario_Numero
+    postgres:
+      table: stockInventoryLines
+      pk: stockInventoryLine_id
+      parent_fk: stockInventoryLine_inventory_id
+      conflict: [stockInventoryLine_inventory_id, stockInventoryLine_position]
+      delete_missing: true
+    fields:
+      - access: Articulo_Pos
+        pg: stockInventoryLine_position
+        type: int
+
+      - access: Articulo_Codigo
+        pg: stockInventoryLine_articulo_id
+        type: string
+        transform: trim
+        lookup:
+          table: articulos.articulos
+          match: articulo_codigo
+          select: articulo_id
+          case_insensitive: true
+
+      - access: Articulo_Sistema
+        pg: stockInventoryLine_systemQty
+        type: decimal
+
+      - access: Articulo_Almacen
+        pg: stockInventoryLine_warehouseQty
+        type: decimal
+        nullable: true
+
+      - access: Articulo_Proceso
+        pg: stockInventoryLine_processQty
+        type: decimal
+        nullable: true
+
+      - access: Articulo_Real
+        pg: stockInventoryLine_realQty
+        type: decimal
+        nullable: true
+
+      - access: Articulo_Dif
+        pg: stockInventoryLine_diffQty
+        type: decimal
+        nullable: true
+
+      - access: Articulo_AlmacenC
+        pg: stockInventoryLine_warehouseQtyC
+        type: decimal
+        nullable: true
+
+      - access: Articulo_ProcesoC
+        pg: stockInventoryLine_processQtyC
+        type: decimal
+        nullable: true
+
+      - access: Articulo_RealC
+        pg: stockInventoryLine_realQtyC
+        type: decimal
+        nullable: true
+
+      - access: Articulo_DifC
+        pg: stockInventoryLine_diffQtyC
+        type: decimal
+        nullable: true
+
+      - access: Articulo_Precio
+        pg: stockInventoryLine_unitCost
+        type: decimal
+
+      - access: Ajustado
+        pg: stockInventoryLine_adjusted
+        type: access_bool
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both
+  bump_sequence: stockInventory_number

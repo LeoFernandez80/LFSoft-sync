@@ -1,0 +1,43 @@
+# Movimientos de stock (Articulo.mdb, Stock) <-> articulos."stockMovements" + "stockMovementLines".
+# Sincronizador propio (internal/stock): los dos modelos no se corresponden campo a campo.
+#
+# - Legacy: una fila de Stock por linea, con la cabecera repetida y su propio Movimiento_Tipo
+#   (una conversion son filas 6 y 57 con el mismo numero). El signo sale del tipo (< 50 suma,
+#   >= 50 resta); una cantidad negativa (nota de credito) lo invierte.
+# - App: cabecera (seccion, tipo, origen, estado) y lineas con tipo, signo, direccion y cantidad
+#   siempre positiva. Un contra-asiento invierte el signo y en Access va como cantidad negativa.
+#
+# Ningun lado modifica un movimiento grabado (el VB6 solo agrega o borra movimientos enteros; la
+# app anula con un contra-asiento), asi que cada movimiento se copia entero una vez:
+# - Access -> PG: los numeros que faltan en PG (createdBy = "legacy"); los movimientos del legacy
+#   borrados en Access se borran en PG.
+# - PG -> Access: los movimientos creados en la app (trigger V012). Si el VB6 ya uso ese numero,
+#   el de la app se renumera (MAX + 1) antes de escribirlo.
+# Las filas con cantidad 0 tambien viajan (articulos V029). Las que PG no puede guardar (sin
+# articulo, como las filas "placeholder" de facturas de proveedor, o con un codigo que ya no esta
+# en el maestro de articulos) quedan solo en Access.
+# Despues de inventarios y presupuestos: el origen de un ajuste o un retiro apunta a ellos.
+entity: stockMovements
+enabled: true
+kind: stock_movements
+load_order: 58
+
+access:
+  mdb: Articulo.mdb
+  table: Stock
+  pk: Movimiento_Numero
+  pk_type: long
+
+postgres:
+  schema: articulos
+  table: stockMovements
+  pk: stockMovement_id
+  business_key: stockMovement_number
+
+detection:
+  full_scan_interval: 30m
+  change_scan_interval: 1m
+
+sync:
+  interval: 10s
+  direction: both

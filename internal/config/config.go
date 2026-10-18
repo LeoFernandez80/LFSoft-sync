@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -21,6 +22,12 @@ type Config struct {
 type EntityConfig struct {
 	Entity  string       `yaml:"entity"`
 	Enabled bool         `yaml:"enabled"`
+	// LoadOrder sorts entities for --initial-sync: lower first, so catalogs land before the rows
+	// that reference them (lookups, FKs). Ties keep file name order. Zero means DefaultLoadOrder.
+	LoadOrder int `yaml:"load_order"`
+	// Kind selects a dedicated synchronizer instead of the generic field mapping:
+	// "stock_movements" (legacy Stock rows <-> stockMovements + stockMovementLines).
+	Kind string `yaml:"kind"`
 	Access  AccessConfig `yaml:"access"`
 	PG      PGConfig     `yaml:"postgres"`
 
@@ -91,6 +98,16 @@ type FieldMap struct {
 	// Lookup replaces the converted value with one read from a PG table (legacy code → id,
 	// code → snapshot text). Unlike fk_resolve it needs no sync.id_map entries.
 	Lookup *Lookup `yaml:"lookup"`
+	// NullBefore (date fields, "2006-01-02") turns earlier Access dates into NULL: Jet stores
+	// "no date" as 1899-12-30. Access → PG only; nullable fields only.
+	NullBefore string `yaml:"null_before"`
+	// ReverseFrom builds the Access value from several PG columns joined with a space
+	// (PG → Access), e.g. Empleado_Nombre from first and last name.
+	ReverseFrom []string `yaml:"reverse_from"`
+	// ReverseFormat formats the reverse_from values (fmt verbs, integers when numeric) instead of
+	// joining them; ReverseEmpty is written when any of them is NULL ("dd/mm" from day and month).
+	ReverseFormat string `yaml:"reverse_format"`
+	ReverseEmpty  string `yaml:"reverse_empty"`
 }
 
 type FKResolve struct {
@@ -112,6 +129,9 @@ type Lookup struct {
 	CaseInsensitive bool     `yaml:"case_insensitive"`
 	Query           string   `yaml:"query"`
 	Args            []string `yaml:"args"`
+	// ReverseQuery makes a query lookup reversible: a SELECT whose $1 is the PG value and whose
+	// single column is the Access value (PG → Access).
+	ReverseQuery string `yaml:"reverse_query"`
 }
 
 type ChildConfig struct {
@@ -138,6 +158,18 @@ type ChildAccess struct {
 	// RootFK is the child column holding the root's Access PK, for nested children whose
 	// parent key is only unique within the root (Detalles: Presupuesto_Numero + Item_Numero).
 	RootFK string `yaml:"root_fk"`
+	// Keys are extra columns that, with parent_fk (root_fk) and pk, identify a row in Access
+	// when pk alone isn't unique within the parent (Criterios: lista + familia + grupo + subgrupo).
+	Keys []string `yaml:"keys"`
+	// GenerateKey assigns the Access pk to rows created in the app (PG value NULL) before they
+	// are written: "parent" = MAX within the parent + 1, "global" = MAX of the table + 1. The
+	// value is stored back in PG so later syncs match the row.
+	GenerateKey string `yaml:"generate_key"`
+}
+
+// KeyColumns are the Access columns, besides the parent keys, that identify a child row.
+func (a ChildAccess) KeyColumns() []string {
+	return append([]string{a.PK}, a.Keys...)
 }
 
 type ChildPG struct {
@@ -149,6 +181,9 @@ type ChildPG struct {
 	Conflict []string `yaml:"conflict"`
 	// DeleteMissing removes the parent's PG child rows that are no longer in Access.
 	DeleteMissing bool `yaml:"delete_missing"`
+	// AccessDeleteMissing overrides delete_missing for PG → Access writes: false keeps Access rows
+	// the PG document lacks (a legacy row the sync has not brought yet would otherwise be lost).
+	AccessDeleteMissing *bool `yaml:"access_delete_missing"`
 	// SumOnDuplicate merges Access rows of one parent that share the conflict key (compared
 	// case-insensitively, like Jet): these PG columns are added up, the rest come from the
 	// first row. For tables without a unique key in Access where repeats mean "more of the
@@ -161,9 +196,35 @@ type SyncConfig struct {
 	BatchSize  int           `yaml:"batch_size"`
 	Direction  string        `yaml:"direction"`
 	UseIDCoord *bool         `yaml:"use_idcoord"`
+	// GenerateKey: a row created in the app without business key gets MAX(Access, PG) + 1
+	// before it is written to Access (numeric keys only), and the key is stored in PG.
+	GenerateKey bool `yaml:"generate_key"`
 	// DeleteMissing (default true) deletes PG rows missing from Access on full scans. Turn it off
 	// when PG also holds rows created by the app that never reach Access.
 	DeleteMissing *bool `yaml:"delete_missing"`
+	// BumpSequence names a root PG column whose sequence (identity or an owned DEFAULT nextval)
+	// the app numbers new rows with while the legacy app numbers with MAX+1. After each write the
+	// sequence is moved up to MAX(column), so the app never hands out a number Access already used.
+	BumpSequence string `yaml:"bump_sequence"`
+}
+
+const DefaultLoadOrder = 100
+
+func (ec *EntityConfig) Order() int {
+	if ec.LoadOrder > 0 {
+		return ec.LoadOrder
+	}
+	return DefaultLoadOrder
+}
+
+// InLoadOrder returns the entities sorted by Order (stable, so ties keep file name order).
+func (c *Config) InLoadOrder() []*EntityConfig {
+	out := make([]*EntityConfig, len(c.Entities))
+	for i := range c.Entities {
+		out[i] = &c.Entities[i]
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Order() < out[j].Order() })
+	return out
 }
 
 func (ec *EntityConfig) DeletesMissing() bool {
@@ -281,6 +342,14 @@ func validateFields(fields []FieldMap) error {
 		if f.Split != nil && f.Split.Sep == "" {
 			return fmt.Errorf("field %s: split needs sep", f.PG)
 		}
+		if f.NullBefore != "" {
+			if _, err := time.Parse("2006-01-02", f.NullBefore); err != nil {
+				return fmt.Errorf("field %s: null_before must be YYYY-MM-DD: %w", f.PG, err)
+			}
+			if f.Type != "date" || !f.Nullable {
+				return fmt.Errorf("field %s: null_before needs a nullable date field", f.PG)
+			}
+		}
 	}
 	return nil
 }
@@ -304,4 +373,13 @@ func validateChildren(children []ChildConfig) error {
 		}
 	}
 	return nil
+}
+
+// DeletesInAccess reports whether PG → Access document writes delete the Access rows of this
+// collection that the PG document no longer has.
+func (p ChildPG) DeletesInAccess() bool {
+	if p.AccessDeleteMissing != nil {
+		return *p.AccessDeleteMissing
+	}
+	return p.DeleteMissing
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/lfsoft/shared/accessdb"
 	"github.com/lfsoft/sync/internal/config"
 	"github.com/lfsoft/sync/internal/mapper"
+	"github.com/lfsoft/sync/internal/reader"
 )
 
 type AccessWriter struct {
@@ -91,10 +92,34 @@ func (w *AccessWriter) Delete(ctx context.Context, accessPK string) (int64, erro
 func (w *AccessWriter) Exists(ctx context.Context, accessPK string) (bool, error) {
 	q := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s",
 		w.cfg.Access.Table, w.formatPKWhere(accessPK))
-	row := w.conn.QueryRow(ctx, q)
 	var c int64
-	if err := row.Scan(&c); err != nil {
+	if err := reader.QueryOne(ctx, w.conn, q, &c); err != nil {
 		return false, err
 	}
 	return c > 0, nil
+}
+
+// MaxValue returns MAX(col) of an Access table (0 when empty), optionally filtered by where.
+func (w *AccessWriter) MaxValue(ctx context.Context, table, col, where string) (int64, error) {
+	q := fmt.Sprintf("SELECT MAX(%s) FROM %s", bracket(col), bracket(table))
+	if where != "" {
+		q += " WHERE " + where
+	}
+	var v interface{}
+	if err := reader.QueryOne(ctx, w.conn, q, &v); err != nil {
+		return 0, err
+	}
+	if v == nil {
+		return 0, nil
+	}
+	return mapper.ToInt64(v)
+}
+
+// KeyWhere builds "[a] = literal AND ..." for the given column/value pairs.
+func KeyWhere(cols []string, vals []interface{}) string {
+	keys := make([]keyCol, len(cols))
+	for i := range cols {
+		keys[i] = keyCol{cols[i], vals[i]}
+	}
+	return keyWhere(keys)
 }

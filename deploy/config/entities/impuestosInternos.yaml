@@ -1,0 +1,41 @@
+# Impuestos internos (Articulo.mdb, Impuestos) <-> articulos."impuestosInternos".
+# PK directa: impuestoInterno_id = ImpInt_Codigo (codigos por /sync/next-id/impuestos).
+entity: impuestos
+enabled: true
+load_order: 10
+
+access:
+  mdb: Articulo.mdb
+  table: Impuestos
+  pk: ImpInt_Codigo
+  pk_type: byte
+
+postgres:
+  schema: articulos
+  table: impuestosInternos
+  pk: impuestoInterno_id
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 30m
+  change_scan_interval: 30s
+
+fields:
+  - access: ImpInt_Codigo
+    pg: impuestoInterno_id
+    type: int
+
+  - access: ImpInt_Descripcion
+    pg: impuestoInterno_descripcion
+    type: string
+    transform: trim
+
+  - access: ImpInt_Monto
+    pg: impuestoInterno_monto
+    type: decimal
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

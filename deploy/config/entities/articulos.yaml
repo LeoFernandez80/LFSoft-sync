@@ -1,5 +1,6 @@
 entity: articles
 enabled: true
+load_order: 20
 
 access:
   mdb: Articulo.mdb
@@ -236,9 +237,12 @@ fields:
     pg: articulo_grupo_id
     type: int
 
+  # 12.124 articulos tienen la unidad en NULL o 0 y la columna es NOT NULL con FK: van a 1
+  # (Unidades), la unidad por defecto del legacy.
   - access: Articulo_UnidadMedida
     pg: articulo_unidadMedida_id
     type: int
+    zero_default: 1
 
   - access: Articulo_RefProvUnidadMedida
     pg: articulo_refProvUnidadMedida_id

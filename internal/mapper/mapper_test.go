@@ -3,6 +3,9 @@ package mapper
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/lfsoft/sync/internal/config"
 	"github.com/lfsoft/sync/internal/reader"
@@ -172,5 +175,55 @@ func TestChildReverseKeepsKeyColumn(t *testing.T) {
 	}
 	if len(am.AccessCols) != 2 {
 		t.Errorf("cols = %v", am.AccessCols)
+	}
+}
+
+func TestSplitFullName(t *testing.T) {
+	cases := []struct{ in, first, last string }{
+		{"Lucas Gonzalo de la Torre", "Lucas Gonzalo", "de la Torre"},
+		{" Juan Perez ", "Juan", "Perez"},
+		{"Hidramic", "", "Hidramic"},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		first, last := splitFullName(c.in)
+		if first != c.first || last != c.last {
+			t.Errorf("splitFullName(%q) = %q, %q; want %q, %q", c.in, first, last, c.first, c.last)
+		}
+	}
+}
+
+func TestTimeOfDayRoundTrip(t *testing.T) {
+	f := config.FieldMap{Access: "Hora", PG: "hora", Type: "time", Nullable: true}
+	jet := time.Date(1899, 12, 30, 14, 35, 10, 0, time.UTC)
+	v, err := convertRaw(jet, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pt, ok := v.(pgtype.Time)
+	if !ok || !pt.Valid || pt.Microseconds != (14*3600+35*60+10)*1_000_000 {
+		t.Fatalf("forward = %#v", v)
+	}
+	back, err := convertToAccess(pt, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bt := back.(time.Time)
+	if bt.Year() != 1899 || bt.Hour() != 14 || bt.Minute() != 35 || bt.Second() != 10 {
+		t.Fatalf("reverse = %v", bt)
+	}
+	if v, _ := convertRaw(0.5, f); v.(pgtype.Time).Microseconds != 12*3600*1_000_000 {
+		t.Fatalf("day fraction = %#v", v)
+	}
+}
+
+func TestDateNullBefore(t *testing.T) {
+	f := config.FieldMap{Access: "F", PG: "f", Type: "date", Nullable: true, NullBefore: "1900-01-01"}
+	if v, _ := convertRaw(time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC), f); v != nil {
+		t.Fatalf("sentinel date = %v, want nil", v)
+	}
+	d := time.Date(2020, 5, 1, 0, 0, 0, 0, time.UTC)
+	if v, _ := convertRaw(d, f); v != d {
+		t.Fatalf("real date = %v", v)
 	}
 }

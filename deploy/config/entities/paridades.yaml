@@ -1,5 +1,6 @@
 entity: paridades
 enabled: true
+load_order: 20
 
 access:
   mdb: Utilidades.mdb

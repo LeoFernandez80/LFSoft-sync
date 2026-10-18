@@ -3,8 +3,8 @@
 #     Detalles / Otros / Reales_Detalles / Reales_Otros / Movimientos (retiros de stock)
 # Mapeo tomado del ETL LFSoft-app/database/sales/etl/02_transform.sql.
 #
-# Access -> PG: todo el arbol. PG -> Access: el documento entero (cabecera + lineas) cada vez
-# que la app lo guarda (triggers de sync V010), menos Movimientos, que es del legacy.
+# Access -> PG: todo el arbol. PG -> Access: el documento entero (cabecera + lineas, retiros
+# incluidos) cada vez que la app lo guarda (triggers de sync V010 y V012).
 # Solo se escriben las columnas mapeadas: lo que esta en Access y no en PG (nombre del
 # subcliente, usuario que confecciono, etc.) queda como esta para la app legacy.
 # Depende de clientes.yaml y articulos.yaml: cliente y articulo se resuelven por lookup.
@@ -12,12 +12,12 @@
 # Numeracion: la app toma MAX(Access, PG) + 1 de este sync (use_idcoord) y reintenta +1 si
 # el numero ya existe. Como la app escribe sus presupuestos en Access, el MAX+1 del VB6 los ve.
 #
-# ANTES DE HABILITAR: los presupuestos que la app creo hasta hoy se numeraron con
-# quotes_number_seq y no estan en Access. Si alguno comparte numero con uno del VB6, al
-# habilitar el sync el de Access pisaria al de la app. Verificar que no haya numeros
-# repetidos (ver resumen de la implementacion) y despues pasar enabled a true.
+# Habilitada con el paquete de reset (2026-10-16): la base se recrea vacia y todos los
+# presupuestos de PG salen de Access, asi que ya no hay numeros de la app que puedan chocar
+# con los del VB6.
 entity: quotes
-enabled: false
+enabled: true
+load_order: 50
 
 access:
   mdb: Presup.mdb
@@ -93,9 +93,10 @@ fields:
     type: int
     offset: 1
 
+  # type int: el offset (codigo 0-based del legacy -> moneda_id) solo se aplica a enteros.
   - access: Presupuesto_Moneda
     pg: quote_currencyName
-    type: string
+    type: int
     offset: 1
     lookup:
       table: precios.monedas
@@ -515,7 +516,8 @@ children:
 
       - access: Actividad_Codigo
         pg: quoteItem_actividad_id
-        type: int
+        type: string
+        transform: trim
         nullable: true
         lookup:
           table: articulos.actividades
@@ -678,7 +680,8 @@ children:
           # Jet compara codigos sin distinguir mayusculas: el lookup tambien.
           - access: Articulo_Codigo
             pg: quoteItemDetail_article_id
-            type: int
+            type: string
+            transform: trim
             lookup:
               table: articulos.articulos
               match: articulo_codigo
@@ -865,7 +868,8 @@ children:
 
           - access: Articulo_Codigo
             pg: quoteItemRealDetail_article_id
-            type: int
+            type: string
+            transform: trim
             lookup:
               table: articulos.articulos
               match: articulo_codigo
@@ -1039,9 +1043,9 @@ children:
       # suman y las devoluciones (2) restan (PresupStock.bas). Tabla PG nueva:
       # LFSoft-app sales V025 (deploy/migrations-app/V029).
       - entity: quoteItemWithdrawals
-        # Los retiros los hace el legacy (descuentan stock en Articulo.mdb): no se escriben
-        # desde PG, para no borrar un retiro que el sync todavia no trajo.
-        direction: access_to_pg
+        # Ida y vuelta. Al escribir en Access, las filas repetidas del mismo articulo se
+        # reemplazan por la sumada (sum_on_duplicate) y no se borran retiros que falten en PG
+        # (access_delete_missing: false): pueden ser del VB6 y todavia no haber llegado.
         access:
           table: Movimientos
           pk: Articulo_Codigo
@@ -1056,6 +1060,7 @@ children:
           # (o con otra mayuscula). Las cantidades se suman, que es lo que significan.
           sum_on_duplicate: [quoteItemWithdrawal_quantity]
           delete_missing: true
+          access_delete_missing: false
         fields:
           - access: Articulo_Codigo
             pg: quoteItemWithdrawal_articleCode
@@ -1065,7 +1070,8 @@ children:
           # Nullable: el legacy acepta codigos que no estan en el maestro.
           - access: Articulo_Codigo
             pg: quoteItemWithdrawal_article_id
-            type: int
+            type: string
+            transform: trim
             nullable: true
             lookup:
               table: articulos.articulos

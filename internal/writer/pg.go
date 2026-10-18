@@ -28,6 +28,10 @@ type PGWriter struct {
 	// failing row is left out of the next batch, so a few thousand rejects (e.g. an FK to a row PG
 	// lacks) don't force a slow row-by-row pass every cycle. Used only by the entity's own worker.
 	failed map[string]failedRow
+
+	// numericTypes caches, per table, the declared type of its numeric columns ("numeric(18,4)"),
+	// so document upserts compare values the way PG stores them (see upsertRow).
+	numericTypes map[string]map[string]string
 }
 
 type failedRow struct {
@@ -37,7 +41,7 @@ type failedRow struct {
 }
 
 func NewPG(pool *pgxpool.Pool, cfg *config.EntityConfig) *PGWriter {
-	return &PGWriter{pool: pool, cfg: cfg, failed: make(map[string]failedRow)}
+	return &PGWriter{pool: pool, cfg: cfg, failed: make(map[string]failedRow), numericTypes: make(map[string]map[string]string)}
 }
 
 func rowFingerprint(r *mapper.MappedRow) string {
@@ -205,6 +209,11 @@ func (w *PGWriter) SyncBatch(ctx context.Context, rows []*mapper.MappedRow) (wri
 		if _, err = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT sync_batch"); err != nil {
 			return 0, fmt.Errorf("rollback savepoint: %w (batch: %v)", err, batchErr)
 		}
+		// Each per-row apply filters the stage by key: without an index that is a scan of the
+		// whole stage per row, quadratic on a full table (35k articles took hours).
+		if _, err = tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX ON %s (("%s"::text)); ANALYZE %s`, stage, key, stage)); err != nil {
+			return 0, fmt.Errorf("index stage: %w (batch: %v)", err, batchErr)
+		}
 		var failures map[string]string
 		written, failures, err = w.applyRowByRow(ctx, tx, apply, stage, target, key, tCols, sCols)
 		if err != nil {
@@ -304,7 +313,11 @@ func (w *PGWriter) applyRowByRow(
 	return written, failures, nil
 }
 
-func (w *PGWriter) DeleteMissing(ctx context.Context, accessPKs []string) (int, error) {
+// DeleteMissing deletes the PG rows whose key is not among accessPKs (the keys a full scan read).
+// stillMissing, when set, re-checks the candidates against Access right before deleting: a row
+// can get its key and reach Access after the scan read the table (a row created in the app with
+// generate_key), and must not be deleted for that.
+func (w *PGWriter) DeleteMissing(ctx context.Context, accessPKs []string, stillMissing func([]string) ([]string, error)) (int, error) {
 	if len(accessPKs) == 0 {
 		return 0, nil
 	}
@@ -360,6 +373,32 @@ func (w *PGWriter) DeleteMissing(ctx context.Context, accessPKs []string) (int, 
 			toDelete, total, maxDeleteMissingRatio*100)
 	}
 
+	if stillMissing != nil && !isDatePK {
+		rows, err := tx.Query(ctx, fmt.Sprintf(`SELECT "%s"::text FROM %s."%s" WHERE %s`, col, schema, table, where), args...)
+		if err != nil {
+			return 0, fmt.Errorf("delete missing: candidates: %w", err)
+		}
+		var cands []string
+		for rows.Next() {
+			var k string
+			if err := rows.Scan(&k); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			cands = append(cands, k)
+		}
+		rows.Close()
+		gone, err := stillMissing(cands)
+		if err != nil {
+			return 0, fmt.Errorf("delete missing: recheck access: %w", err)
+		}
+		if len(gone) == 0 {
+			return 0, nil
+		}
+		where = fmt.Sprintf(`"%s"::text = ANY($%d)`, col, len(args)+1)
+		args = append(args, gone)
+	}
+
 	q := fmt.Sprintf(`DELETE FROM %s."%s" WHERE %s`, schema, table, where)
 	tag, err := tx.Exec(ctx, q, args...)
 	if err != nil {
@@ -370,6 +409,17 @@ func (w *PGWriter) DeleteMissing(ctx context.Context, accessPKs []string) (int, 
 		return 0, err
 	}
 	return int(tag.RowsAffected()), nil
+}
+
+// BumpSequence moves the sequence behind col (pg_get_serial_sequence) up to MAX(col) when it is
+// behind; it never moves it down. No-op when col has no sequence or the table is empty.
+func (w *PGWriter) BumpSequence(ctx context.Context, col string) error {
+	table := fmt.Sprintf(`%s."%s"`, w.cfg.PG.Schema, w.cfg.PG.Table)
+	q := fmt.Sprintf(`SELECT setval(seq, m) FROM (
+		SELECT pg_get_serial_sequence($1, $2)::regclass AS seq, (SELECT MAX("%s") FROM %s) AS m) x
+		WHERE seq IS NOT NULL AND m IS NOT NULL AND m > COALESCE(pg_sequence_last_value(seq), 0)`, col, table)
+	_, err := w.pool.Exec(ctx, q, table, col)
+	return err
 }
 
 func (w *PGWriter) CountPG(ctx context.Context) (int64, error) {
@@ -414,7 +464,11 @@ func (w *PGWriter) UpsertDocument(ctx context.Context, doc *mapper.DocRow) error
 	}
 
 	target := fmt.Sprintf(`%s."%s"`, w.cfg.PG.Schema, w.cfg.PG.Table)
-	id, err := upsertRow(ctx, tx, target, w.cfg.PG.PK, []string{w.conflictColumn()}, doc.Row.PGCols, doc.Row.PGVals)
+	types, err := w.numericColumns(ctx, tx, target)
+	if err != nil {
+		return err
+	}
+	id, err := upsertRow(ctx, tx, target, w.cfg.PG.PK, []string{w.conflictColumn()}, doc.Row.PGCols, doc.Row.PGVals, types)
 	if err != nil {
 		return fmt.Errorf("upsert pk=%s: %w", doc.Row.PKVal, err)
 	}
@@ -433,11 +487,15 @@ func (w *PGWriter) writeChildren(ctx context.Context, tx pgx.Tx, cfgs []config.C
 		}
 		target := fmt.Sprintf(`%s."%s"`, w.cfg.PG.Schema, ch.PG.Table)
 		keys := ch.ConflictColumns()
+		types, err := w.numericColumns(ctx, tx, target)
+		if err != nil {
+			return err
+		}
 		kept := make([]int64, 0, len(rows))
 		for _, r := range rows {
 			cols := append(append(make([]string, 0, len(r.Row.PGCols)+1), r.Row.PGCols...), ch.PG.ParentFK)
 			vals := append(append(make([]interface{}, 0, len(r.Row.PGVals)+1), r.Row.PGVals...), parentID)
-			id, err := upsertRow(ctx, tx, target, ch.PG.PK, keys, cols, vals)
+			id, err := upsertRow(ctx, tx, target, ch.PG.PK, keys, cols, vals, types)
 			if err != nil {
 				return fmt.Errorf("%s key=%s: %w", ch.Entity, r.Row.PKVal, err)
 			}
@@ -456,9 +514,37 @@ func (w *PGWriter) writeChildren(ctx context.Context, tx pgx.Tx, cfgs []config.C
 	return nil
 }
 
+// numericColumns returns the declared numeric types of target's columns (cached).
+func (w *PGWriter) numericColumns(ctx context.Context, tx pgx.Tx, target string) (map[string]string, error) {
+	if t, ok := w.numericTypes[target]; ok {
+		return t, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT a.attname, format_type(a.atttypid, a.atttypmod) FROM pg_attribute a
+		WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped AND a.atttypid = 'numeric'::regtype`, target)
+	if err != nil {
+		return nil, fmt.Errorf("column types of %s: %w", target, err)
+	}
+	defer rows.Close()
+	t := make(map[string]string)
+	for rows.Next() {
+		var name, typ string
+		if err := rows.Scan(&name, &typ); err != nil {
+			return nil, err
+		}
+		t[name] = typ
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	w.numericTypes[target] = t
+	return t, nil
+}
+
 // upsertRow finds the row by its key columns, updates it only if some value differs and
-// inserts it otherwise. Returns the row's PK.
-func upsertRow(ctx context.Context, tx pgx.Tx, target, pk string, keys, cols []string, vals []interface{}) (int64, error) {
+// inserts it otherwise. Returns the row's PK. numeric gives the declared type of the numeric
+// columns: a value from Access (a Single such as 7.1999998) is compared after casting it to the
+// column's scale, as PG stores it, or every scan would rewrite the row.
+func upsertRow(ctx context.Context, tx pgx.Tx, target, pk string, keys, cols []string, vals []interface{}, numeric map[string]string) (int64, error) {
 	idx := make(map[string]int, len(cols))
 	for i, c := range cols {
 		idx[c] = i
@@ -491,7 +577,11 @@ func upsertRow(ctx context.Context, tx pgx.Tx, target, pk string, keys, cols []s
 			args = append(args, vals[i])
 			n := len(args)
 			sets = append(sets, fmt.Sprintf(`"%s" = $%d`, c, n))
-			diffs = append(diffs, fmt.Sprintf(`"%s" IS DISTINCT FROM $%d`, c, n))
+			if typ, ok := numeric[c]; ok {
+				diffs = append(diffs, fmt.Sprintf(`"%s" IS DISTINCT FROM CAST($%d AS %s)`, c, n, typ))
+			} else {
+				diffs = append(diffs, fmt.Sprintf(`"%s" IS DISTINCT FROM $%d`, c, n))
+			}
 		}
 		if len(sets) > 0 {
 			q := fmt.Sprintf(`UPDATE %s SET %s WHERE "%s" = $1 AND (%s)`,

@@ -1,0 +1,47 @@
+# Paises (Clientes.mdb, Pais) <-> utilities.countries. Clave: Pais_Codigo = country_legacyCode
+# (0 = ARGENTINA, gobierna la validacion del CUIT). Los paises creados en la app reciben codigo
+# legacy (MAX + 1, generate_key). Las localidades van en localidades.yaml.
+entity: countries
+enabled: true
+load_order: 14
+
+access:
+  mdb: Clientes.mdb
+  table: Pais
+  pk: Pais_Codigo
+  pk_type: byte
+
+postgres:
+  schema: utilities
+  table: countries
+  pk: country_id
+  business_key: country_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: Pais_Codigo
+    pg: country_legacyCode
+    type: int
+
+  - access: Pais_Nombre
+    pg: country_name
+    type: string
+    transform: trim
+
+  - access: Pais_CodigoAFIP
+    pg: country_afipCode
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both
+  generate_key: true

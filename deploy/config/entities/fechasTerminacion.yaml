@@ -1,0 +1,44 @@
+# Fechas de terminacion de presupuestos (Factura.mdb) -> sales."quoteCompletionDates", la tabla
+# que usa el grafico estadistico de presupuestos (sales V024).
+#
+# No es una tabla del legacy sino lo que el VB6 calcula en CotizacionesFacturadas (presup.bas):
+# la primera factura no anulada de cada presupuesto. Hasta ahora la cargaba una vez
+# backend/tools/importchartdates con esta misma consulta; como entidad del sync queda al dia sola.
+# Las facturas nuevas de presupuestos viejos solo pueden adelantar la fecha, y eso lo ve el
+# barrido completo, que corre cada vez que cambia Factura.mdb (change_scan_interval).
+entity: quoteCompletionDates
+enabled: true
+load_order: 55
+
+access:
+  mdb: Factura.mdb
+  table: >-
+    (SELECT Factura_Presupuesto, MIN(Factura_Fecha) AS Fecha_Terminacion FROM Facturas
+    WHERE Factura_Nula = FALSE AND Factura_Presupuesto > 0 GROUP BY Factura_Presupuesto) AS T
+  pk: Factura_Presupuesto
+  pk_type: long
+
+postgres:
+  schema: sales
+  table: quoteCompletionDates
+  pk: quote_number
+  business_key: quote_number
+
+detection:
+  access_to_pg: max_pk
+  full_scan_interval: 6h
+  change_scan_interval: 10m
+
+fields:
+  - access: Factura_Presupuesto
+    pg: quote_number
+    type: int
+
+  - access: Fecha_Terminacion
+    pg: completionDate
+    type: date
+
+sync:
+  interval: 1m
+  batch_size: 500
+  direction: access_to_pg

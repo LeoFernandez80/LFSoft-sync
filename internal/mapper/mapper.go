@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"io"
 	"math"
+	"regexp"
 	"strings"
 	"time"
 
@@ -298,8 +299,13 @@ func convertRaw(raw interface{}, f config.FieldMap) (interface{}, error) {
 		return toInt64(raw)
 	case "string":
 		s := toString(raw)
-		if f.Transform == "trim" {
+		switch f.Transform {
+		case "trim":
 			s = strings.TrimSpace(s)
+		case "first_name":
+			s, _ = splitFullName(s)
+		case "last_name":
+			_, s = splitFullName(s)
 		}
 		return s, nil
 	case "access_bool", "int_bool":
@@ -313,7 +319,17 @@ func convertRaw(raw interface{}, f config.FieldMap) (interface{}, error) {
 	case "float", "decimal":
 		return toFloat64(raw)
 	case "date":
-		return toDate(raw)
+		d, err := toDate(raw)
+		if err == nil && f.NullBefore != "" {
+			if t, ok := d.(time.Time); ok {
+				if limit, perr := time.Parse("2006-01-02", f.NullBefore); perr == nil && t.Before(limit) {
+					return nil, nil
+				}
+			}
+		}
+		return d, err
+	case "time":
+		return toTimeOfDay(raw)
 	default:
 		return raw, nil
 	}
@@ -412,7 +428,13 @@ func toAccessBool(v interface{}) (bool, error) {
 		return val != 0, nil
 	case int16:
 		return val != 0, nil
+	case uint8: // Byte columns used as flags
+		return val != 0, nil
+	case int8:
+		return val != 0, nil
 	case float64:
+		return val != 0, nil
+	case float32:
 		return val != 0, nil
 	case int:
 		return val != 0, nil
@@ -490,6 +512,38 @@ func toDate(v interface{}) (interface{}, error) {
 	}
 }
 
+// toTimeOfDay keeps the clock part of a Jet time value (a DateTime on 1899-12-30, or the day
+// fraction of a Double) for a PG time column.
+func toTimeOfDay(v interface{}) (interface{}, error) {
+	var h, m, s int
+	switch val := v.(type) {
+	case time.Time:
+		if val.IsZero() {
+			return nil, nil
+		}
+		h, m, s = val.Clock()
+	case float64:
+		secs := int(math.Round((val - math.Floor(val)) * 86400))
+		h, m, s = secs/3600%24, secs/60%60, secs%60
+	default:
+		return nil, fmt.Errorf("cannot convert %T to time of day", v)
+	}
+	us := (int64(h)*3600 + int64(m)*60 + int64(s)) * 1_000_000
+	return pgtype.Time{Microseconds: us, Valid: true}, nil
+}
+
+// lastNameRe takes the last word of a full name plus the particles before it ("de la Torre").
+var lastNameRe = regexp.MustCompile(`(?i)((?:\b(?:de|del|la|las|los|van|von|di|da|dos|san|santa)\b\s+)*\S+)$`)
+
+// splitFullName splits the legacy single-column name ("Lucas Gonzalo de la Torre") into first
+// and last name, as the utilities ETL did. Joining them with a space gives the trimmed input.
+func splitFullName(full string) (first, last string) {
+	full = strings.TrimSpace(full)
+	last = lastNameRe.FindString(full)
+	first = strings.TrimSpace(full[:len(full)-len(last)])
+	return first, last
+}
+
 func zeroForType(t string) interface{} {
 	switch t {
 	case "int":
@@ -513,3 +567,6 @@ func HashValues(vals []interface{}) string {
 	fmt.Fprintf(h, "%v", vals)
 	return string(h.Sum(nil))
 }
+
+// ToInt64 converts a value read from Access or PG to int64.
+func ToInt64(v interface{}) (int64, error) { return toInt64(v) }

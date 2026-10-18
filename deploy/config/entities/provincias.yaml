@@ -1,0 +1,55 @@
+# Provincias (Clientes.mdb) <-> utilities.provinces. Clave: Provincia_Codigo =
+# province_legacyCode (unico en todo el legacy, no por pais). El pais se resuelve por
+# country_legacyCode (paises.yaml carga antes). Las creadas en la app reciben codigo legacy (MAX + 1).
+entity: provinces
+enabled: true
+load_order: 15
+
+access:
+  mdb: Clientes.mdb
+  table: Provincias
+  pk: Provincia_Codigo
+  pk_type: byte
+
+postgres:
+  schema: utilities
+  table: provinces
+  pk: province_id
+  business_key: province_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: Provincia_Codigo
+    pg: province_legacyCode
+    type: int
+
+  - access: Provincia_Nombre
+    pg: province_name
+    type: string
+    transform: trim
+
+  - access: Pais_Codigo
+    pg: province_country_id
+    type: int
+    lookup:
+      table: utilities.countries
+      match: country_legacyCode
+      select: country_id
+
+  # Codigo de jurisdiccion de Convenio Multilateral: une la provincia con las jurisdicciones
+  # IIBB del cliente.
+  - access: Provincia_CodigoCM
+    pg: province_cmCode
+    type: int
+    nullable: true
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both
+  generate_key: true

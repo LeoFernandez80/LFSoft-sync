@@ -1,0 +1,41 @@
+# Bancos (Bancos.mdb, [Entidades Bancarias]) -> utilities.banks.
+# Ida y vuelta. Las filas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
+# No estaba sembrado en PG: lo carga el sync.
+# Clave: Banco_Codigo = bank_legacyCode.
+entity: banks
+enabled: true
+load_order: 13
+
+access:
+  mdb: Bancos.mdb
+  table: "[Entidades Bancarias]"
+  pk: Banco_Codigo
+  pk_type: int
+
+postgres:
+  schema: utilities
+  table: banks
+  pk: bank_id
+  business_key: bank_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: Banco_Codigo
+    pg: bank_legacyCode
+    type: int
+
+  - access: Banco_Descripcion
+    pg: bank_name
+    type: string
+    transform: trim
+
+sync:
+  interval: 30s
+  batch_size: 100
+  direction: both
+  generate_key: true

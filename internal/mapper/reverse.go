@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/lfsoft/sync/internal/config"
 	"github.com/lfsoft/sync/internal/reader"
 )
@@ -62,12 +63,62 @@ func (m *Reverse) Map(row reader.Row) (*AccessMappedRow, error) {
 		}
 		// Several PG columns can come from one Access column (an id and its snapshot text):
 		// the first field wins, so list the reversible one (id) first. Split and query lookups
-		// can't be reversed and are left out.
-		if seen[f.Access] || f.Split != nil || (f.Lookup != nil && f.Lookup.Query != "") {
+		// can't be reversed and are left out, and so are name parts (first_name/last_name).
+		namepart := (f.Transform == "first_name" || f.Transform == "last_name") && len(f.ReverseFrom) == 0
+		oneWayQuery := f.Lookup != nil && f.Lookup.Query != "" && f.Lookup.ReverseQuery == ""
+		if seen[f.Access] || (f.Split != nil && len(f.ReverseFrom) == 0) || namepart || oneWayQuery {
 			continue
 		}
 		seen[f.Access] = true
-		if f.Lookup != nil {
+		if len(f.ReverseFrom) > 0 && f.ReverseFormat != "" {
+			args := make([]interface{}, 0, len(f.ReverseFrom))
+			empty := false
+			for _, c := range f.ReverseFrom {
+				v := row[c]
+				if v == nil {
+					empty = true
+					break
+				}
+				if n, err := toInt64(v); err == nil {
+					v = n
+				}
+				args = append(args, v)
+			}
+			cols = append(cols, f.Access)
+			if empty {
+				vals = append(vals, f.ReverseEmpty)
+			} else {
+				vals = append(vals, fmt.Sprintf(f.ReverseFormat, args...))
+			}
+			continue
+		}
+		if len(f.ReverseFrom) > 0 {
+			parts := make([]string, 0, len(f.ReverseFrom))
+			for _, c := range f.ReverseFrom {
+				if s := strings.TrimSpace(toString(row[c])); s != "" {
+					parts = append(parts, s)
+				}
+			}
+			cols = append(cols, f.Access)
+			vals = append(vals, strings.Join(parts, " "))
+			continue
+		}
+		if f.Lookup != nil && f.Lookup.ReverseQuery != "" {
+			if raw != nil {
+				if m.res.Lookup == nil {
+					return nil, fmt.Errorf("field %s: lookup: no resolver configured", f.PG)
+				}
+				l := &config.Lookup{Query: f.Lookup.ReverseQuery, Args: []string{f.PG}}
+				match, found, err := m.res.Lookup.Lookup(m.res.ctx(), l, []interface{}{raw})
+				if err != nil {
+					return nil, fmt.Errorf("field %s: reverse query: %w", f.PG, err)
+				}
+				if !found {
+					match = nil
+				}
+				raw = match
+			}
+		} else if f.Lookup != nil {
 			if raw != nil {
 				if m.res.Lookup == nil {
 					return nil, fmt.Errorf("field %s: lookup: no resolver configured", f.PG)
@@ -89,8 +140,18 @@ func (m *Reverse) Map(row reader.Row) (*AccessMappedRow, error) {
 		}
 		if f.Map != nil {
 			// The Access side holds the map key (e.g. "SI"), not a typed value.
+			mv := reverseMapValue(f.Map, raw)
+			// A "true"/"false" key stands for an Access Yes/No column, not for text.
+			if s, ok := mv.(string); ok {
+				switch strings.ToLower(s) {
+				case "true":
+					mv = true
+				case "false":
+					mv = false
+				}
+			}
 			cols = append(cols, f.Access)
-			vals = append(vals, reverseMapValue(f.Map, raw))
+			vals = append(vals, mv)
 			continue
 		}
 
@@ -215,6 +276,15 @@ func convertToAccess(raw interface{}, f config.FieldMap) (interface{}, error) {
 	case "date":
 		if t, ok := raw.(time.Time); ok {
 			return LocalCalendarDate(t), nil
+		}
+		return raw, nil
+	case "time":
+		// Jet keeps a time of day as a DateTime on its zero date.
+		if t, ok := raw.(pgtype.Time); ok {
+			if !t.Valid {
+				return nil, nil
+			}
+			return time.Date(1899, 12, 30, 0, 0, 0, 0, time.Local).Add(time.Duration(t.Microseconds) * time.Microsecond), nil
 		}
 		return raw, nil
 	default:

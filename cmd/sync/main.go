@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,8 +39,14 @@ func main() {
 
 	cfgPath := flag.String("config", "config/sync.yaml", "path to sync config file")
 	initialLoad := flag.String("initial-load", "", "run initial load for the given entity (Access → PG)")
+	initialSync := flag.Bool("initial-sync", false, "run one full Access → PG scan per enabled entity in load_order and exit")
+	only := flag.String("entities", "", "with --initial-sync: comma-separated entities to scan (default: all enabled)")
 	dryRun := flag.Bool("dry-run", false, "detect and log changes without writing")
 	flag.Parse()
+
+	if *initialSync {
+		os.Exit(runInitialSync(*cfgPath, *only))
+	}
 
 	stop := make(chan struct{})
 	go func() {
@@ -161,6 +168,74 @@ func runSync(cfgPath, initialLoad string, dryRun bool, stop chan struct{}) {
 
 	cancel()
 	log.Info("sync service stopped")
+}
+
+// runInitialSync is the --initial-sync mode: the first full scan of every entity, one after the
+// other in load_order, then a summary table on stdout. Exit code 1 if any entity had errors.
+func runInitialSync(cfgPath, only string) int {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		return 2
+	}
+	logger, err := newLogger(cfg.LogFile)
+	if err != nil {
+		logger, _ = zap.NewProduction()
+	}
+	defer logger.Sync()
+	log := logger.Sugar()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, cfg.PgDSN)
+	if err != nil {
+		log.Errorw("pg connect", "err", err)
+		return 2
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		log.Errorw("pg ping", "err", err)
+		return 2
+	}
+	mdbConns, err := openMDBConnections(cfg)
+	if err != nil {
+		log.Errorw("mdb connections", "err", err)
+		return 2
+	}
+	defer closeMDBConnections(mdbConns)
+
+	var entities []string
+	if only != "" {
+		entities = strings.Split(only, ",")
+	}
+	results, runErr := engine.RunInitialSync(ctx, pool, mdbConns, cfg,
+		state.NewRepository(pool), synclog.NewRepository(pool), idmap.NewRepository(pool), log, entities)
+
+	fmt.Printf("\n%-22s %10s %10s %8s %12s %10s %9s\n", "ENTIDAD", "LEIDAS", "ESCRITAS", "ERRORES", "ACCESS", "PG", "SEG")
+	code := 0
+	for _, r := range results {
+		mark := ""
+		if r.Errors > 0 {
+			code = 1
+			mark = "  <-- ver log"
+		}
+		fmt.Printf("%-22s %10d %10d %8d %12d %10d %9.1f%s\n", r.Entity, r.Detected, r.Written, r.Errors,
+			r.AccessCount, r.PGCount, r.Duration.Seconds(), mark)
+		if r.ErrorDetail != "" {
+			// ASCII: la consola clasica de Windows puede cortar al script que lee esta salida.
+			detail := strings.ReplaceAll(r.ErrorDetail, "→", "->")
+			if len(detail) > 300 {
+				detail = detail[:300] + "..."
+			}
+			fmt.Printf("    %s\n", detail)
+		}
+	}
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "initial sync: %v\n", runErr)
+		return 2
+	}
+	return code
 }
 
 // newLogger writes JSON logs to stderr and, if path is set, appends to that file.

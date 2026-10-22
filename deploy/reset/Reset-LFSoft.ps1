@@ -489,6 +489,14 @@ if (-not $SinGrillas) {
     elseif ($grillasFail -gt 0) { Write-Warn "$grillasFail grilla(s) no se pudieron aplicar: reintentar con .\Aplicar-Grillas.ps1" }
     else { Write-Ok "Columnas relevantes y engranaje de configuracion en $($grillas.Count) grillas (sql\grillas)" }
 }
+# Campos ID ocultos en filtros y forms, para todos los roles. Va despues de restaurar los campos
+# ocultos de ADMIN para no pisarlos. Un error no corta el reset (reintentar con Ocultar-CamposId.ps1).
+$idsFile = Join-Path $pkg "sql\campos-id-ocultos.sql"
+if (Test-Path $idsFile) {
+    $r = Invoke-Native $psql @('-X', '-q', '-v', 'ON_ERROR_STOP=1', '-d', $conn, '-f', $idsFile)
+    if ($r.Code -ne 0) { Write-Warn "Campos ID ocultos: reintentar con .\Ocultar-CamposId.ps1"; Write-Safe $r.Output }
+    else { Write-Ok "Campos ID ocultos en filtros y forms (sql\campos-id-ocultos.sql)" }
+}
 
 }
 

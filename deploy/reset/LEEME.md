@@ -12,6 +12,7 @@ Recrea desde cero la base `lfsoft_hidramic`, aplica las migraciones de estructur
 | `Restore-LFSoft.ps1` | Vuelve la base y el sync al estado del backup |
 | `Mantenimiento-Sync.ps1` | Mantenimiento nocturno (lo instala el reset como tarea programada) |
 | `Aplicar-Grillas.ps1` | Aplica los scripts de `sql\grillas` (todos o algunos) sobre una base en uso |
+| `Ocultar-CamposId.ps1` | Oculta los campos ID en filtros y forms (`sql\campos-id-ocultos.sql`) sobre una base en uso |
 | `manifest-app.txt` | Orden en que se aplican las migraciones de la app |
 | `migrations-app\<dominio>\` | Las migraciones de la app (articulos, precios, sales, seguridad, settings, utilities) |
 | `sql\branding.sql` | Tabla `settings.branding`, solo si la base actual no la tiene |
@@ -124,6 +125,19 @@ El reset los aplica todos. Para aplicarlos sobre una base en uso (no hace falta 
 ```
 
 Para cambiar qué columnas quedan visibles en una grilla, editar la lista `visibles` de su script (nombres de campo de `settings.grid_column_definitions`). Si un nombre no está en el catálogo, el script lo avisa y sigue.
+
+## Campos ID ocultos en filtros y forms
+
+`sql\campos-id-ocultos.sql` agrega el campo ID de cada entidad (`articulo_id`, `customer_id`, ...) a los campos ocultos de **todos los roles** en los filtros (`eFilter_*`) y forms (`eForm_*`) que lo muestran (`seguridad.role_hidden_fields`), sin quitar los campos que cada rol ya tenga ocultos. Es solo presentación: el ID sigue viajando en el JSON. El reset lo aplica en el paso 7, después de restaurar los campos ocultos de ADMIN.
+
+Para aplicarlo sobre una base en uso (no hace falta detener el backend; los usuarios lo ven al recargar la app):
+
+```powershell
+.\Ocultar-CamposId.ps1             # oculta los ID
+.\Ocultar-CamposId.ps1 -Revertir   # los vuelve a mostrar
+```
+
+Si una pantalla nueva muestra el ID, agregar el par (pantalla, campo) a la lista `pantallas` del script SQL.
 
 ## Volver atrás
 

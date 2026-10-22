@@ -357,12 +357,12 @@ func setErrorDetail(entry *synclog.Entry, err error) {
 // syncDocuments writes roots with their child trees. Reading children is the expensive part, so:
 //   - a change-triggered full scan (fullScan && !periodic) only completes roots whose own row
 //     changed since it was last written; child-only edits wait for the periodic scan or a
-//     timestamp read;
+//     timestamp read (unless detection.children_on_change);
 //   - unless periodic, a document whose whole tree equals the last one written is skipped.
 //
 // It reports false when an Access read failed, so the cycle keeps its state and retries.
 func (w *Worker) syncDocuments(ctx context.Context, rows []reader.Row, entry *synclog.Entry, fullScan, periodic bool) bool {
-	if fullScan && !periodic {
+	if fullScan && !periodic && !w.entity.Detection.ChildrenOnChange {
 		m := w.fwMapper(ctx)
 		changed := rows[:0:0]
 		for _, row := range rows {

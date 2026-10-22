@@ -48,8 +48,10 @@ $grOut = Join-Path $OutRoot ("LFSoft-grillas_" + (Get-Date -Format "yyyyMMdd"))
 if (Test-Path $grOut) { Remove-Item $grOut -Recurse -Force }
 New-Item -ItemType Directory -Force (Join-Path $grOut "sql") | Out-Null
 Copy-Item (Join-Path $here "Aplicar-Grillas.ps1") $grOut
+Copy-Item (Join-Path $here "Ocultar-CamposId.ps1") $grOut
 Copy-Item (Join-Path $here "LEEME-Grillas.md") (Join-Path $grOut "LEEME.md")
 Copy-Item (Join-Path $here "sql\grillas") (Join-Path $grOut "sql") -Recurse
+Copy-Item (Join-Path $here "sql\campos-id-ocultos.sql") (Join-Path $grOut "sql")
 Write-Host "Grillas: $((Get-ChildItem (Join-Path $grOut 'sql\grillas\*.sql')).Count)"
 if ($Zip) { Write-Zip $grOut }
 Write-Host "Paquete de grillas: $grOut" -ForegroundColor Green
@@ -111,7 +113,7 @@ Copy-Item (Join-Path $out "manifest-app.txt") (Join-Path $here "manifest-app.txt
 Write-Host "Migraciones de la app: $count"
 
 # --- Scripts ---
-foreach ($f in @("Reset-LFSoft.ps1", "Restore-LFSoft.ps1", "Mantenimiento-Sync.ps1", "Aplicar-Grillas.ps1", "LEEME.md")) {
+foreach ($f in @("Reset-LFSoft.ps1", "Restore-LFSoft.ps1", "Mantenimiento-Sync.ps1", "Aplicar-Grillas.ps1", "Ocultar-CamposId.ps1", "LEEME.md")) {
     Copy-Item (Join-Path $here $f) $out
 }
 Copy-Item (Join-Path $here "sql") $out -Recurse

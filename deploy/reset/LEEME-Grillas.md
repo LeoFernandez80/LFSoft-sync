@@ -13,6 +13,8 @@ Por cada grilla:
 |---|---|
 | `Aplicar-Grillas.ps1` | Aplica los scripts de `sql\grillas` (todos o algunos) |
 | `sql\grillas\<grilla>.sql` | Un script por grilla: columnas visibles y engranaje de configuración |
+| `Ocultar-CamposId.ps1` | Oculta los campos ID de las entidades en filtros y forms, para todos los roles (`-Revertir` los vuelve a mostrar) |
+| `sql\campos-id-ocultos.sql` | Las pantallas y el campo ID de cada una |
 
 ## Requisitos
 

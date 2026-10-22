@@ -24,7 +24,11 @@ detection:
   access_to_pg: max_pk
   pg_to_access: trigger
   full_scan_interval: 60m
-  change_scan_interval: 5m
+  change_scan_interval: 1m
+  # La fila del pais no cambia cuando se edita una localidad: sin esto, el barrido por cambio
+  # de Clientes.mdb descarta todos los paises y las localidades esperan al barrido de 60m.
+  # Leer las ~2.400 localidades es barato; solo se escriben los paises cuyo arbol cambio.
+  children_on_change: true
 
 fields:
   - access: Pais_Codigo

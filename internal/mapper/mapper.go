@@ -72,7 +72,7 @@ func (m *Forward) Map(row reader.Row) (*MappedRow, error) {
 
 	for _, f := range m.fields {
 		raw, ok := row[f.Access]
-		if !ok {
+		if !ok || f.ReverseOnly {
 			continue
 		}
 

@@ -174,6 +174,13 @@ seguridad|seguridad|V061__seed_permission_actions_stock.up.sql
 seguridad|seguridad|V062__seed_grid_row_actions_stock_movement_types.up.sql
 seguridad|seguridad|V063__seed_permission_actions_stock_documents.up.sql
 seguridad|seguridad|V064__seed_permission_actions_quotes_speech.up.sql
+seguridad|seguridad|V065__seed_permission_actions_dashboards.up.sql
+seguridad|seguridad|V066__seed_quote_legacy_roles_and_state_rules.up.sql
+seguridad|seguridad|V067__seed_permission_actions_price_updates.up.sql
+seguridad|seguridad|V068__seed_grid_row_actions_sales_price_list_factors.up.sql
+seguridad|seguridad|V069__translate_permission_action_descriptions.up.sql
+seguridad|seguridad|V070__seed_grid_actions_price_updates.up.sql
+seguridad|seguridad|V071__create_matrix_condition_layouts.up.sql
 articulos|articulos|V001__create_familias_table.up.sql
 articulos|articulos|V002__create_grupos_table.up.sql
 articulos|articulos|V003__create_unidadesMedida_table.up.sql
@@ -197,6 +204,15 @@ precios|precios|V004__add_foreign_keys.up.sql
 precios|precios|V005__add_indexes.up.sql
 precios|precios|V006__seed_monedas.up.sql
 precios|precios|V007__listasPrecios_sync_key.up.sql
+precios|precios|V008__create_salesPriceListFactors_table.up.sql
+precios|precios|V009__create_priceUpdates_table.up.sql
+precios|precios|V010__create_priceUpdateSupplierRows_table.up.sql
+precios|precios|V011__create_priceUpdateLines_table.up.sql
+precios|precios|V012__create_priceUpdatePatterns_table.up.sql
+precios|precios|V013__create_articlePriceHistories_table.up.sql
+precios|precios|V014__add_price_update_foreign_keys.up.sql
+precios|precios|V015__add_price_update_indexes.up.sql
+precios|precios|V016__seed_salesPriceListFactors.up.sql
 utilities|utilities|V001__create_employees_table.up.sql
 utilities|utilities|V002__create_expenseReports_table.up.sql
 utilities|utilities|V003__create_expenseReportExpenses_table.up.sql
@@ -238,6 +254,10 @@ settings|settings|V111__seed_grid_columns_stock_documents.up.sql
 settings|settings|V112__seed_literals_fabrem_status_and_price_control.up.sql
 settings|settings|V113__seed_literals_paridad_duplicate_fecha.up.sql
 settings|settings|V114__seed_literals_speech_text.up.sql
+settings|settings|V115__seed_literals_dashboards.up.sql
+settings|settings|V116__seed_literals_and_grid_columns_sales_price_list_factors.up.sql
+settings|settings|V117__seed_literals_and_grid_columns_price_updates.up.sql
+settings|settings|V118__seed_literals_matrix_conditions_and_cases.up.sql
 sales|sales|V001__create_quotes_table.up.sql
 sales|sales|V002__create_quoteItems_table.up.sql
 sales|sales|V003__create_quoteItemDetails_table.up.sql
@@ -276,5 +296,6 @@ articulos|articulos|V027__alter_paridades_fechaCorrespondeA_date.up.sql
 articulos|articulos|V028__paridades_articulos_sync_keys.up.sql
 articulos|articulos|V029__stock_lines_allow_zero_quantity.up.sql
 articulos|articulos|V030__access_control_user_name_nullable.up.sql
+articulos|articulos|V031__add_articulo_criterio_inSupplierList.up.sql
 sales|sales|V025__create_quoteItemWithdrawals.up.sql
 sales|sales|V026__add_sync_keys.up.sql

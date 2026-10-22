@@ -20,16 +20,16 @@ type Config struct {
 }
 
 type EntityConfig struct {
-	Entity  string       `yaml:"entity"`
-	Enabled bool         `yaml:"enabled"`
+	Entity  string `yaml:"entity"`
+	Enabled bool   `yaml:"enabled"`
 	// LoadOrder sorts entities for --initial-sync: lower first, so catalogs land before the rows
 	// that reference them (lookups, FKs). Ties keep file name order. Zero means DefaultLoadOrder.
 	LoadOrder int `yaml:"load_order"`
 	// Kind selects a dedicated synchronizer instead of the generic field mapping:
 	// "stock_movements" (legacy Stock rows <-> stockMovements + stockMovementLines).
-	Kind string `yaml:"kind"`
-	Access  AccessConfig `yaml:"access"`
-	PG      PGConfig     `yaml:"postgres"`
+	Kind   string       `yaml:"kind"`
+	Access AccessConfig `yaml:"access"`
+	PG     PGConfig     `yaml:"postgres"`
 
 	Detection DetectionConfig `yaml:"detection"`
 	Fields    []FieldMap      `yaml:"fields"`
@@ -64,6 +64,11 @@ type DetectionConfig struct {
 	// ChangeScanInterval is the minimum gap between full scans triggered by a .mdb modtime change
 	// (edits to existing rows are only visible to a full scan). Zero means DefaultChangeScanInterval.
 	ChangeScanInterval time.Duration `yaml:"change_scan_interval"`
+	// ChildrenOnChange makes a change-triggered full scan of a document read the children of
+	// every root, not only of the roots whose own row changed. For documents whose root row
+	// never changes when a child does (localities rooted at the country): without it, child
+	// edits wait for the periodic scan.
+	ChildrenOnChange bool `yaml:"children_on_change"`
 }
 
 const DefaultChangeScanInterval = 30 * time.Second
@@ -108,6 +113,10 @@ type FieldMap struct {
 	// joining them; ReverseEmpty is written when any of them is NULL ("dd/mm" from day and month).
 	ReverseFormat string `yaml:"reverse_format"`
 	ReverseEmpty  string `yaml:"reverse_empty"`
+	// ReverseOnly keeps the field out of Access → PG writes: it only fills an Access column from
+	// a PG column another field already writes, e.g. the second column of a composite legacy
+	// key (an article's price criterion: list + subgroup) via lookup.reverse_query.
+	ReverseOnly bool `yaml:"reverse_only"`
 }
 
 type FKResolve struct {
@@ -331,7 +340,10 @@ func (ec *EntityConfig) Validate() error {
 
 func validateFields(fields []FieldMap) error {
 	for _, f := range fields {
-		if l := f.Lookup; l != nil {
+		if f.ReverseOnly && (f.Lookup == nil || f.Lookup.ReverseQuery == "") {
+			return fmt.Errorf("field %s: reverse_only needs lookup.reverse_query", f.PG)
+		}
+		if l := f.Lookup; l != nil && !f.ReverseOnly {
 			if l.Query == "" && (l.Table == "" || l.Match == "" || l.Select == "") {
 				return fmt.Errorf("field %s: lookup needs table, match and select (or query and args)", f.PG)
 			}

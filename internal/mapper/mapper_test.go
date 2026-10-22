@@ -137,6 +137,73 @@ func TestReverseDedupesAndInverts(t *testing.T) {
 	}
 }
 
+// queryLookup answers query lookups by query text + args.
+type queryLookup map[string]interface{}
+
+func (q queryLookup) Lookup(_ context.Context, l *config.Lookup, args []interface{}) (interface{}, bool, error) {
+	key := l.Query
+	for _, a := range args {
+		key += "|" + toString(a)
+	}
+	v, ok := q[key]
+	return v, ok, nil
+}
+
+func (q queryLookup) ReverseLookup(context.Context, *config.Lookup, interface{}) (interface{}, bool, error) {
+	return nil, false, nil
+}
+
+func TestReverseOnlyCompositeKey(t *testing.T) {
+	cfg := &config.EntityConfig{
+		Access: config.AccessConfig{PK: "Codigo"},
+		Fields: []config.FieldMap{
+			{Access: "Codigo", PG: "codigo", Type: "string"},
+			{Access: "SubGrupo", PG: "criterio_id", Type: "int", Nullable: true, NullSentinels: []string{"0"},
+				Lookup: &config.Lookup{Query: "fwd", Args: []string{"Lista", "SubGrupo"}, ReverseQuery: "sg"}},
+			{Access: "Lista", PG: "criterio_id", Type: "int", Nullable: true, NullSentinels: []string{"0"},
+				ReverseOnly: true, Lookup: &config.Lookup{ReverseQuery: "lista"}},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	lk := queryLookup{"fwd|2|5": int32(32), "sg|32": int32(5), "lista|32": int32(2)}
+
+	fw := NewForward(cfg).With(Resolvers{Lookup: lk})
+	mr, err := fw.Map(reader.Row{"Codigo": "A1", "Lista": int32(2), "SubGrupo": int16(5)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mr.PGCols) != 2 || valueOf(t, mr, "criterio_id") != int32(32) {
+		t.Errorf("forward = %v %v", mr.PGCols, mr.PGVals)
+	}
+	mr, err = fw.Map(reader.Row{"Codigo": "A2", "Lista": int32(0), "SubGrupo": int16(0)})
+	if err != nil || valueOf(t, mr, "criterio_id") != nil {
+		t.Errorf("forward 0/0 = %v, %v", mr, err)
+	}
+
+	rv := NewReverse(cfg).With(Resolvers{Lookup: lk})
+	for _, tc := range []struct {
+		id             interface{}
+		lista, subGrup interface{}
+	}{{int32(32), int64(2), int64(5)}, {nil, int64(0), int64(0)}} {
+		am, err := rv.Map(reader.Row{"codigo": "A1", "criterio_id": tc.id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		l, _ := am.Value("Lista")
+		s, _ := am.Value("SubGrupo")
+		if toString(l) != toString(tc.lista) || toString(s) != toString(tc.subGrup) {
+			t.Errorf("reverse %v = Lista %#v, SubGrupo %#v", tc.id, l, s)
+		}
+	}
+
+	bad := config.EntityConfig{Fields: []config.FieldMap{{Access: "X", PG: "x", ReverseOnly: true}}}
+	if err := bad.Validate(); err == nil {
+		t.Error("reverse_only without reverse_query must fail validation")
+	}
+}
+
 func TestIntBoolRoundTrip(t *testing.T) {
 	f := config.FieldMap{Access: "Articulo_PrecioControlado", PG: "isPriceControlled", Type: "int_bool"}
 	for raw, want := range map[int16]bool{1: true, 0: false} {

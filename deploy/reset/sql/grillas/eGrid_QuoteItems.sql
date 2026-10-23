@@ -1,11 +1,15 @@
--- Grilla eGrid_QuoteItems (Presupuestos: items): deja visibles solo: Numero, descripcion, cantidad, precio y total.
+-- Grilla eGrid_QuoteItems (Presupuestos: items): deja visibles solo: Numero, descripcion, cantidad,
+-- entregada, facturada, pendientes de entregar y de facturar, precio y total estimados y reales.
 -- Las demas columnas quedan ocultas; cada usuario las puede volver a mostrar desde la
 -- configuracion de la grilla. Cambia el visible del catalogo (lo que ve quien nunca configuro
 -- la grilla) y el de las configuraciones ya guardadas de esta grilla. Se puede correr mas de una vez.
 DO $$
 DECLARE
     grilla   text   := 'eGrid_QuoteItems';
-    visibles text[] := ARRAY['quoteItem_number', 'quoteItem_description', 'quoteItem_quantity', 'quoteItem_price', 'quoteItem_total'];
+    visibles text[] := ARRAY['quoteItem_number', 'quoteItem_description', 'quoteItem_quantity',
+                             'quoteItem_deliveredQuantity', 'quoteItem_invoicedQuantity',
+                             'quoteItem_pendingDeliveryQuantity', 'quoteItem_pendingInvoiceQuantity',
+                             'quoteItem_price', 'quoteItem_total', 'quoteItem_realPrice', 'quoteItem_realTotal'];
     f        text;
 BEGIN
     FOREACH f IN ARRAY visibles LOOP

@@ -202,13 +202,19 @@ if (-not $SkipMigrations) {
         }
 
         $env:PGPASSWORD = $pgPass
+        # Ocultar NOTICE de migraciones idempotentes (ej. "ya existe, omitiendo")
+        $env:PGOPTIONS = "-c client_min_messages=warning"
+        # En PS 5.1, stderr de un exe nativo con 2>&1 se vuelve error terminante bajo "Stop";
+        # el resultado real se controla con $LASTEXITCODE + ON_ERROR_STOP=1.
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
 
         Write-Host "  Conectando a $pgHost`:$pgPort/$pgDb como $pgUser..."
 
         $syncMigrations = Get-ChildItem "$InstallDir\migrations\*.sql" | Sort-Object Name
         foreach ($mig in $syncMigrations) {
             Write-Host "  Ejecutando $($mig.Name)..." -NoNewline
-            $output = & $PsqlPath -h $pgHost -p $pgPort -U $pgUser -d $pgDb -f $mig.FullName -v ON_ERROR_STOP=1 2>&1
+            $output = & $PsqlPath -h $pgHost -p $pgPort -U $pgUser -d $pgDb -f $mig.FullName -v ON_ERROR_STOP=1 2>&1 | ForEach-Object { "$_" }
             if ($LASTEXITCODE -ne 0) {
                 Write-Host " ERROR" -ForegroundColor Red
                 Write-Host "  $output"
@@ -222,7 +228,7 @@ if (-not $SkipMigrations) {
         $appMigs = Get-ChildItem "$InstallDir\migrations-app\*.sql" -ErrorAction SilentlyContinue | Sort-Object Name
         foreach ($mig in $appMigs) {
             Write-Host "  Ejecutando $($mig.Name)..." -NoNewline
-            $output = & $PsqlPath -h $pgHost -p $pgPort -U $pgUser -d $pgDb -f $mig.FullName -v ON_ERROR_STOP=1 2>&1
+            $output = & $PsqlPath -h $pgHost -p $pgPort -U $pgUser -d $pgDb -f $mig.FullName -v ON_ERROR_STOP=1 2>&1 | ForEach-Object { "$_" }
             if ($LASTEXITCODE -ne 0) {
                 Write-Host " ERROR" -ForegroundColor Red
                 Write-Host "  $output"
@@ -231,7 +237,9 @@ if (-not $SkipMigrations) {
             }
         }
 
+        $ErrorActionPreference = $prevEAP
         Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+        Remove-Item Env:\PGOPTIONS -ErrorAction SilentlyContinue
         Write-Host "  Migraciones completadas." -ForegroundColor Green
     }
 } else {

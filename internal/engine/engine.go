@@ -10,8 +10,10 @@ import (
 	"github.com/lfsoft/sync/internal/config"
 	"github.com/lfsoft/sync/internal/guard"
 	"github.com/lfsoft/sync/internal/idmap"
+	"github.com/lfsoft/sync/internal/lookup"
 	"github.com/lfsoft/sync/internal/mapper"
 	"github.com/lfsoft/sync/internal/state"
+	"github.com/lfsoft/sync/internal/stock"
 	"github.com/lfsoft/sync/internal/synclog"
 	"go.uber.org/zap"
 )
@@ -27,6 +29,7 @@ type Engine struct {
 	log       *zap.SugaredLogger
 	workers   []*Worker
 	pgWorkers map[string]*PGWorker
+	stock     map[string]*stock.Syncer
 }
 
 func New(
@@ -49,6 +52,7 @@ func New(
 		guard:     g,
 		log:       log,
 		pgWorkers: make(map[string]*PGWorker),
+		stock:     make(map[string]*stock.Syncer),
 	}
 }
 
@@ -58,6 +62,7 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 	if e.idmapR != nil {
 		fk = mapper.NewIDMapFKResolver(e.idmapR)
 	}
+	lk := lookup.New(e.pool)
 
 	for i := range e.cfg.Entities {
 		ec := &e.cfg.Entities[i]
@@ -67,8 +72,27 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 			continue
 		}
 
+		// Stock movements have their own synchronizer (see internal/stock).
+		if ec.Kind == "stock_movements" {
+			sy := stock.New(e.pool, conn, ec, e.cfg.MdbBasePath, e.stateR, e.synclogR, e.log, dryRun)
+			e.stock[ec.Entity] = sy
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sy.RunAccessToPG(ctx)
+			}()
+			if ec.Sync.Direction == "both" || ec.Sync.Direction == "pg_to_access" {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					sy.RunPGToAccess(ctx)
+				}()
+			}
+			continue
+		}
+
 		// Access → PG worker
-		w := NewWorker(e.pool, conn, ec, e.cfg.MdbBasePath, e.stateR, e.synclogR, e.guard, fk, e.log, dryRun)
+		w := NewWorker(e.pool, conn, ec, e.cfg.MdbBasePath, e.stateR, e.synclogR, e.guard, fk, lk, e.log, dryRun)
 		e.workers = append(e.workers, w)
 		wg.Add(1)
 		go func(w *Worker) {
@@ -78,7 +102,7 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 
 		// PG → Access worker
 		if ec.Sync.Direction == "both" || ec.Sync.Direction == "pg_to_access" {
-			pw := NewPGWorker(e.pool, conn, ec, e.stateR, e.synclogR, e.idmapR, e.guard, fk, e.log, dryRun)
+			pw := NewPGWorker(e.pool, conn, ec, e.stateR, e.synclogR, e.idmapR, e.guard, fk, lk, e.log, dryRun)
 			e.pgWorkers[ec.Entity] = pw
 			wg.Add(1)
 			go func(pw *PGWorker) {
@@ -97,6 +121,9 @@ func (e *Engine) Start(ctx context.Context, dryRun bool) {
 			case <-ctx.Done():
 				return
 			case entity := <-listener.C():
+				if sy, ok := e.stock[entity]; ok {
+					sy.Trigger()
+				}
 				if pw, ok := e.pgWorkers[entity]; ok {
 					pw.Trigger()
 				}

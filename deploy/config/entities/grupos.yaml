@@ -1,0 +1,42 @@
+# Grupos (Articulo.mdb) <-> articulos.grupos. PK directa: grupo_id = Grupo_Codigo (codigos por
+# /sync/next-id/grupos, como familias). Despues de familias por la FK grupo_familia_id.
+# Sin mapear (quedan en Access): Imagen, Grupo_Moneda.
+entity: grupos
+enabled: true
+load_order: 11
+
+access:
+  mdb: Articulo.mdb
+  table: Grupos
+  pk: Grupo_Codigo
+  pk_type: int
+
+postgres:
+  schema: articulos
+  table: grupos
+  pk: grupo_id
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 30m
+  change_scan_interval: 30s
+
+fields:
+  - access: Grupo_Codigo
+    pg: grupo_id
+    type: int
+
+  - access: Grupo_Descripcion
+    pg: grupo_descripcion
+    type: string
+    transform: trim
+
+  - access: Familia_Codigo
+    pg: grupo_familia_id
+    type: int
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

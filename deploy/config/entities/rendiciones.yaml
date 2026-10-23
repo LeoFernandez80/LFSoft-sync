@@ -1,0 +1,320 @@
+# Planillas de rendicion (PlanillasRendiciones.mdb) <-> utilities."expenseReports", con sus
+# cuatro colecciones: Gastos, Destinos (tramos), HorasTrabajadas y DineroEntregado (anticipos).
+# Mapeo tomado de LFSoft-app/database/utilities/etl/02_transform.sql.
+#
+# Clave: PlanillaRendicion_Codigo = expenseReport_number. Las lineas se identifican por
+# (planilla, <Tabla>_Codigo), que en Access es la PK de cada tabla y en PG el UQ
+# (planilla, lineNumber) de utilities V008: por eso el documento entero viaja en los dos
+# sentidos (triggers de sync V011).
+#
+# Numeracion: el VB6 usa MAX+1 y la app expenseReports_number_seq. bump_sequence adelanta la
+# secuencia hasta el MAX que llega del legacy, y lo que la app crea llega a Access en segundos
+# (el VB6 lo ve en su MAX+1).
+# Responsable y asistentes son employee_id = Empleado_Codigo (empleados.yaml, PK directa).
+# Sin mapear (quedan en Access): TotalDias (siempre 0), ActualizadoPor, Gasto_Descripcion,
+# HorasTrabajadas_Descripcion y los *_Posicion (orden de pantalla del VB6; las lineas que crea
+# la app quedan con posicion vacia, que el VB6 lee como 0).
+entity: expenseReports
+enabled: true
+load_order: 61
+
+access:
+  mdb: PlanillasRendiciones.mdb
+  table: PlanillaRendicion
+  pk: PlanillaRendicion_Codigo
+  pk_type: long
+
+postgres:
+  schema: utilities
+  table: expenseReports
+  pk: expenseReport_id
+  business_key: expenseReport_number
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  # Una edicion de lineas en el VB6 sin cambio en la cabecera (FechaActualizacion es solo fecha)
+  # la toma este barrido.
+  full_scan_interval: 10m
+  change_scan_interval: 30s
+
+fields:
+  - access: PlanillaRendicion_Codigo
+    pg: expenseReport_number
+    type: int
+
+  - access: PlanillaRendicion_Fecha
+    pg: expenseReport_date
+    type: date
+
+  # Sin fecha de alta en el legacy: la grilla ordena por createdAt, asi que se usa la fecha
+  # de la planilla, como la ETL.
+  - access: PlanillaRendicion_Fecha
+    pg: expenseReport_createdAt
+    type: date
+
+  - access: PlanillaRendicion_Titulo
+    pg: expenseReport_title
+    type: string
+    transform: trim
+
+  - access: PlanillaRendicion_Estado
+    pg: expenseReport_status
+    type: int
+
+  - access: PlanillaRendicion_PersonasCantidad
+    pg: expenseReport_peopleCount
+    type: int
+    zero_default: 1
+
+  - access: PlanillaRendicion_Responsable
+    pg: expenseReport_responsible_id
+    type: int
+
+  # 0 = "sin seleccionar" en el legacy.
+  - access: PlanillaRendicion_Asistente1
+    pg: expenseReport_assistant1_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: PlanillaRendicion_Asistente2
+    pg: expenseReport_assistant2_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: PlanillaRendicion_Asistente3
+    pg: expenseReport_assistant3_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: PlanillaRendicion_PatenteVehiculo
+    pg: expenseReport_vehiclePlate
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: PlanillaRendicion_MontoReconocidoPorComida
+    pg: expenseReport_perDiemMealAmount
+    type: decimal
+
+  - access: PlanillaRendicion_EstadiaPorPersona
+    pg: expenseReport_perPersonStay
+    type: decimal
+
+  - access: PlanillaRendicion_ListadoOT
+    pg: expenseReport_workOrderList
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: PlanillaRendicion_FechaActualizacion
+    pg: expenseReport_updatedAt
+    type: date
+    nullable: true
+    null_before: "1900-01-01"
+
+children:
+  # ---------------------------------------------------------------- Gastos
+  - entity: expenseReportExpenses
+    access:
+      table: Gastos
+      pk: Gasto_Codigo
+      parent_fk: PlanillaRendicion_Codigo
+    postgres:
+      table: expenseReportExpenses
+      pk: expenseReportExpense_id
+      parent_fk: expenseReportExpense_expenseReport_id
+      conflict: [expenseReportExpense_expenseReport_id, expenseReportExpense_lineNumber]
+      delete_missing: true
+    fields:
+      - access: Gasto_Codigo
+        pg: expenseReportExpense_lineNumber
+        type: int
+
+      - access: Gasto_Fecha
+        pg: expenseReportExpense_date
+        type: date
+
+      - access: Gasto_Fecha
+        pg: expenseReportExpense_createdAt
+        type: date
+
+      - access: Gasto_ListaROT
+        pg: expenseReportExpense_workOrderList
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Gasto_Motivo
+        pg: expenseReportExpense_reason
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Gasto_Proporcional
+        pg: expenseReportExpense_isProportional
+        type: access_bool
+
+      - access: Gasto_TipoGasto
+        pg: expenseReportExpense_type
+        type: int
+
+      - access: Gasto_Concepto
+        pg: expenseReportExpense_concept
+        type: int
+
+      - access: Gasto_FormaPago
+        pg: expenseReportExpense_paymentMethod
+        type: int
+
+      - access: Gasto_Importe
+        pg: expenseReportExpense_amount
+        type: decimal
+
+  # ---------------------------------------------------------------- Tramos de viaje
+  # Destino_Arrivo_* (typo del legacy) -> arrival*. Las horas son DateTime sobre la fecha cero
+  # de Jet: se guarda solo la hora.
+  - entity: expenseReportTrips
+    access:
+      table: Destinos
+      pk: Destino_Codigo
+      parent_fk: PlanillaRendicion_Codigo
+    postgres:
+      table: expenseReportTrips
+      pk: expenseReportTrip_id
+      parent_fk: expenseReportTrip_expenseReport_id
+      conflict: [expenseReportTrip_expenseReport_id, expenseReportTrip_lineNumber]
+      delete_missing: true
+    fields:
+      - access: Destino_Codigo
+        pg: expenseReportTrip_lineNumber
+        type: int
+
+      - access: Destino_Origen
+        pg: expenseReportTrip_origin
+        type: string
+        transform: trim
+
+      - access: Destino_Destino
+        pg: expenseReportTrip_destination
+        type: string
+        transform: trim
+
+      - access: Destino_Salida_Dia
+        pg: expenseReportTrip_departureDate
+        type: date
+
+      - access: Destino_Salida_Dia
+        pg: expenseReportTrip_createdAt
+        type: date
+
+      - access: Destino_Salida_Hora
+        pg: expenseReportTrip_departureTime
+        type: time
+        nullable: true
+
+      - access: Destino_Salida_KM
+        pg: expenseReportTrip_departureKm
+        type: int
+        nullable: true
+
+      - access: Destino_Arrivo_Dia
+        pg: expenseReportTrip_arrivalDate
+        type: date
+        nullable: true
+        null_before: "1900-01-01"
+
+      - access: Destino_Arrivo_Hora
+        pg: expenseReportTrip_arrivalTime
+        type: time
+        nullable: true
+
+      - access: Destino_Arrivo_KM
+        pg: expenseReportTrip_arrivalKm
+        type: int
+        nullable: true
+
+  # ---------------------------------------------------------------- Horas trabajadas
+  - entity: expenseReportWorkedHours
+    access:
+      table: HorasTrabajadas
+      pk: HorasTrabajadas_Codigo
+      parent_fk: PlanillaRendicion_Codigo
+    postgres:
+      table: expenseReportWorkedHours
+      pk: expenseReportWorkedHour_id
+      parent_fk: expenseReportWorkedHour_expenseReport_id
+      conflict: [expenseReportWorkedHour_expenseReport_id, expenseReportWorkedHour_lineNumber]
+      delete_missing: true
+    fields:
+      - access: HorasTrabajadas_Codigo
+        pg: expenseReportWorkedHour_lineNumber
+        type: int
+
+      - access: HorasTrabajadas_Fecha
+        pg: expenseReportWorkedHour_date
+        type: date
+
+      - access: HorasTrabajadas_Fecha
+        pg: expenseReportWorkedHour_createdAt
+        type: date
+
+      # 0 = "sin seleccionar".
+      - access: HorasTrabajadas_ROT
+        pg: expenseReportWorkedHour_workOrder
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+
+      - access: HorasTrabajadas_Item
+        pg: expenseReportWorkedHour_item
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+
+      - access: HorasTrabajadas_CantidadHoras
+        pg: expenseReportWorkedHour_hours
+        type: decimal
+
+  # ---------------------------------------------------------------- Dinero entregado
+  - entity: expenseReportAdvances
+    access:
+      table: DineroEntregado
+      pk: DineroEntregado_Codigo
+      parent_fk: PlanillaRendicion_Codigo
+    postgres:
+      table: expenseReportAdvances
+      pk: expenseReportAdvance_id
+      parent_fk: expenseReportAdvance_expenseReport_id
+      conflict: [expenseReportAdvance_expenseReport_id, expenseReportAdvance_lineNumber]
+      delete_missing: true
+    fields:
+      - access: DineroEntregado_Codigo
+        pg: expenseReportAdvance_lineNumber
+        type: int
+
+      - access: DineroEntregado_Fecha
+        pg: expenseReportAdvance_date
+        type: date
+
+      - access: DineroEntregado_Fecha
+        pg: expenseReportAdvance_createdAt
+        type: date
+
+      - access: DineroEntregado_Pesos
+        pg: expenseReportAdvance_amount
+        type: decimal
+
+sync:
+  interval: 5s
+  batch_size: 50
+  direction: both
+  # La numeracion de la app (expenseReports_number_seq) nunca queda por detras del legacy.
+  bump_sequence: expenseReport_number

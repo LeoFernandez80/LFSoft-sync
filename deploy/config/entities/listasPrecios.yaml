@@ -1,0 +1,173 @@
+# Listas de precios (Criterios.mdb, Listas) <-> precios."listasPrecios", con sus criterios como
+# coleccion. Clave: LP_Codigo = listaPrecios_legacyCode (precios V007).
+#
+# Criterios no tiene clave en Access: se identifica por (lista, familia, grupo, subgrupo), el
+# UQ de precios V005, y con esas cuatro columnas se ubica tambien en Access (access.keys). Viaja
+# en los dos sentidos; no se borran en PG los que falten en Access ni al reves, asi un criterio
+# recien cargado de un lado no se pierde antes de llegar al otro. Las tablas de precios por lista (Precios.mdb, Lista00NN) no tienen tabla
+# en PG y siguen en Access.
+# Las listas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
+entity: listasPrecios
+enabled: true
+load_order: 30
+
+access:
+  mdb: Criterios.mdb
+  table: Listas
+  pk: LP_Codigo
+  pk_type: long
+
+postgres:
+  schema: precios
+  table: listasPrecios
+  pk: listaPrecios_id
+  business_key: listaPrecios_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 1m
+
+fields:
+  - access: LP_Codigo
+    pg: listaPrecios_legacyCode
+    type: int
+
+  - access: LP_Nombre
+    pg: listaPrecios_nombre
+    type: string
+    transform: trim
+
+  # Color de VB6 (Long); PG lo guarda como texto.
+  - access: LP_Color
+    pg: listaPrecios_color
+    type: string
+    nullable: true
+
+children:
+  - entity: criterios
+    access:
+      table: Criterios
+      pk: Criterio_SubGrupo_Codigo
+      parent_fk: Criterio_ListaPrecios_Codigo
+      keys: [Criterio_Familia_Codigo, Criterio_Grupo_Codigo]
+    postgres:
+      table: criterios
+      pk: criterio_id
+      parent_fk: criterio_listaPrecios_id
+      conflict: [criterio_listaPrecios_id, criterio_familiaCodigo, criterio_grupoCodigo, criterio_subGrupoCodigo]
+      delete_missing: false
+    fields:
+      - access: Criterio_Familia_Codigo
+        pg: criterio_familiaCodigo
+        type: int
+
+      - access: Criterio_Grupo_Codigo
+        pg: criterio_grupoCodigo
+        type: int
+
+      - access: Criterio_SubGrupo_Codigo
+        pg: criterio_subGrupoCodigo
+        type: int
+
+      - access: Criterio_SubGrupo_Nombre
+        pg: criterio_subGrupoNombre
+        type: string
+        transform: trim
+
+      - access: Criterio_Descuento
+        pg: criterio_descuento
+        type: decimal
+        nullable: true
+
+      # Codigo legacy 1|2|3 = moneda_id (precios V006 los siembra con esos ids); 0 = sin moneda.
+      - access: Criterio_Moneda
+        pg: criterio_moneda_id
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+
+      - access: Criterio_FactIncPrCosto
+        pg: criterio_factIncPrCosto
+        type: decimal
+        nullable: true
+
+      - access: Criterio_FactIncPrLista
+        pg: criterio_factIncPrLista
+        type: decimal
+        nullable: true
+
+      - access: Criterio_FactIncPorCorte
+        pg: criterio_factIncPorCorte
+        type: decimal
+        nullable: true
+
+      - access: Criterio_FactPies
+        pg: criterio_factPies
+        type: decimal
+        nullable: true
+
+      - access: Criterio_Descripcion
+        pg: criterio_descripcion
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_UnidadMedida
+        pg: criterio_unidadMedida
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_CodigoProveedor
+        pg: criterio_codigoProveedor
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_PatronDescripcion
+        pg: criterio_patronDescripcion
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_PatronAssy
+        pg: criterio_patronAssy
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_UnidadMedidaDistinta
+        pg: criterio_unidadMedidaDistinta
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_CodigoProveedorDistinto
+        pg: criterio_codigoProveedorDistinto
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_PatronDescripcionDistinta
+        pg: criterio_patronDescripcionDistinta
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_PatronAssyDistinto
+        pg: criterio_patronAssyDistinto
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Criterio_Activo
+        pg: criterio_isActive
+        type: access_bool
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both
+  generate_key: true

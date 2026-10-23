@@ -9,6 +9,7 @@ import (
 	"github.com/lfsoft/shared/accessdb"
 	"github.com/lfsoft/sync/internal/config"
 	"github.com/lfsoft/sync/internal/mapper"
+	"github.com/lfsoft/sync/internal/reader"
 )
 
 type AccessWriter struct {
@@ -46,9 +47,10 @@ func (w *AccessWriter) Insert(ctx context.Context, row *mapper.AccessMappedRow) 
 	return err
 }
 
-func (w *AccessWriter) Update(ctx context.Context, row *mapper.AccessMappedRow) error {
+// Update returns the number of Access rows matched by the PK.
+func (w *AccessWriter) Update(ctx context.Context, row *mapper.AccessMappedRow) (int64, error) {
 	if row.AccessPK == "" {
-		return fmt.Errorf("no PK value for update")
+		return 0, fmt.Errorf("no PK value for update")
 	}
 
 	var setClauses []string
@@ -59,7 +61,7 @@ func (w *AccessWriter) Update(ctx context.Context, row *mapper.AccessMappedRow) 
 		setClauses = append(setClauses, fmt.Sprintf("%s = %s", col, mapper.FormatAccessValue(row.AccessVals[i])))
 	}
 	if len(setClauses) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	q := fmt.Sprintf("UPDATE %s SET %s WHERE %s",
@@ -67,8 +69,11 @@ func (w *AccessWriter) Update(ctx context.Context, row *mapper.AccessMappedRow) 
 		strings.Join(setClauses, ", "),
 		w.formatPKWhere(row.AccessPK),
 	)
-	_, err := w.conn.Exec(ctx, q)
-	return err
+	res, err := w.conn.Exec(ctx, q)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (w *AccessWriter) Delete(ctx context.Context, accessPK string) (int64, error) {
@@ -87,10 +92,34 @@ func (w *AccessWriter) Delete(ctx context.Context, accessPK string) (int64, erro
 func (w *AccessWriter) Exists(ctx context.Context, accessPK string) (bool, error) {
 	q := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s",
 		w.cfg.Access.Table, w.formatPKWhere(accessPK))
-	row := w.conn.QueryRow(ctx, q)
 	var c int64
-	if err := row.Scan(&c); err != nil {
+	if err := reader.QueryOne(ctx, w.conn, q, &c); err != nil {
 		return false, err
 	}
 	return c > 0, nil
+}
+
+// MaxValue returns MAX(col) of an Access table (0 when empty), optionally filtered by where.
+func (w *AccessWriter) MaxValue(ctx context.Context, table, col, where string) (int64, error) {
+	q := fmt.Sprintf("SELECT MAX(%s) FROM %s", bracket(col), bracket(table))
+	if where != "" {
+		q += " WHERE " + where
+	}
+	var v interface{}
+	if err := reader.QueryOne(ctx, w.conn, q, &v); err != nil {
+		return 0, err
+	}
+	if v == nil {
+		return 0, nil
+	}
+	return mapper.ToInt64(v)
+}
+
+// KeyWhere builds "[a] = literal AND ..." for the given column/value pairs.
+func KeyWhere(cols []string, vals []interface{}) string {
+	keys := make([]keyCol, len(cols))
+	for i := range cols {
+		keys[i] = keyCol{cols[i], vals[i]}
+	}
+	return keyWhere(keys)
 }

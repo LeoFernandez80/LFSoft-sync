@@ -1,0 +1,40 @@
+# Condiciones frente a IIBB (Clientes.mdb, [Condiciones IIBB]) -> utilities."iibbConditions".
+# Ida y vuelta. Las filas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
+# Clave: CondicionesIIBB_Codigo = iibbCondition_legacyCode.
+entity: iibbConditions
+enabled: true
+load_order: 13
+
+access:
+  mdb: Clientes.mdb
+  table: "[Condiciones IIBB]"
+  pk: CondicionesIIBB_Codigo
+  pk_type: byte
+
+postgres:
+  schema: utilities
+  table: iibbConditions
+  pk: iibbCondition_id
+  business_key: iibbCondition_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: CondicionesIIBB_Codigo
+    pg: iibbCondition_legacyCode
+    type: int
+
+  - access: CondicionesIIBB_Descripcion
+    pg: iibbCondition_description
+    type: string
+    transform: trim
+
+sync:
+  interval: 30s
+  batch_size: 100
+  direction: both
+  generate_key: true

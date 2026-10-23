@@ -1,0 +1,44 @@
+# Posiciones arancelarias (Articulo.mdb, PosArancelaria) <-> articulos."posicionesArancelarias".
+# Clave: PosAran_Numero = posicionArancelaria_numero (NCM).
+# El .mdb real solo tiene PosAran_Numero y PosAran_Declaracion (el RFC habla de
+# PosAran_Descripcion/BreveDescripcion, que no existen): la declaracion va a la descripcion y
+# posicionArancelaria_breveDescripcion queda solo en PG. TipoPosArancelaria e Historial_PosAran
+# no tienen tabla en PG y siguen en Access.
+entity: posicionesArancelarias
+enabled: true
+load_order: 12
+
+access:
+  mdb: Articulo.mdb
+  table: PosArancelaria
+  pk: PosAran_Numero
+  pk_type: text
+
+postgres:
+  schema: articulos
+  table: posicionesArancelarias
+  pk: posicionArancelaria_id
+  business_key: posicionArancelaria_numero
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 1m
+
+fields:
+  - access: PosAran_Numero
+    pg: posicionArancelaria_numero
+    type: string
+    transform: trim
+
+  - access: PosAran_Declaracion
+    pg: posicionArancelaria_descripcion
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

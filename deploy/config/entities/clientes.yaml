@@ -1,0 +1,1076 @@
+# Clientes (Clientes.mdb) <-> sales.customers, con sus subclientes, jurisdicciones de IIBB y
+# contactos (con sus horarios de atencion).
+#
+# Clave: Cliente_Codigo = customer_legacyCode. Los clientes dados de alta en la app no tienen
+# codigo legacy: quedan solo en PG (el worker PG -> Access los saltea).
+# PG -> Access escribe el documento entero (cabecera y colecciones), solo las columnas
+# mapeadas. Los clientes creados en la app reciben codigo legacy (MAX + 1, generate_key) y los
+# contactos nuevos Id_Contacto (MAX + 1 de la tabla).
+# Mapeo tomado de LFSoft-app/database/sales/migrations/V021__seed_customers y de
+# PSB Hidramic (Modulo Clientes.bas / Modulo Subclientes.bas).
+#
+# Sin mapear (quedan en Access): Cliente_Actualizado, Cliente_PagoProveedoresBanco (no hay
+# catalogo de bancos sembrado en PG) y el pais/localidad de los bloques administrativo y de
+# entrega intermedia del subcliente (el legacy tiene un solo Pais_Codigo).
+entity: customers
+enabled: true
+load_order: 40
+
+access:
+  mdb: Clientes.mdb
+  table: Clientes
+  pk: Cliente_Codigo
+  pk_type: long
+
+postgres:
+  schema: sales
+  table: customers
+  pk: customer_id
+  business_key: customer_legacyCode
+
+detection:
+  access_to_pg: timestamp
+  timestamp_column: Cliente_FechaActualizado
+  timestamp_time_column: Cliente_HoraActualizado
+  pg_to_access: trigger
+  # Lee subclientes y jurisdicciones de los ~2.400 clientes: es barato.
+  full_scan_interval: 15m
+  change_scan_interval: 1m
+
+fields:
+  - access: Cliente_Codigo
+    pg: customer_legacyCode
+    type: int
+
+  - access: Cliente_RazonSocial
+    pg: customer_businessName
+    type: string
+    transform: trim
+
+  - access: Cliente_Activo
+    pg: customer_isActive
+    type: access_bool
+
+  - access: Cliente_Direccion
+    pg: customer_address
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_CUIT
+    pg: customer_taxId
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_IDImpositivo
+    pg: customer_taxIdAlternative
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Pais_Codigo
+    pg: customer_country_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+    lookup:
+      table: utilities.countries
+      match: country_legacyCode
+      select: country_id
+
+  # "ND" es el centinela legacy de "sin codigo postal"; se escribe de vuelta como "ND".
+  - access: Codigo_Postal
+    pg: customer_postalCode
+    type: string
+    nullable: true
+    null_sentinels: ["ND", "", " "]
+    transform: trim
+
+  # La localidad se resuelve por (codigo postal, pais), igual que el seed.
+  - access: Codigo_Postal
+    pg: customer_locality_id
+    type: string
+    nullable: true
+    null_sentinels: ["ND", "", " "]
+    lookup:
+      query: >-
+        SELECT l."locality_id" FROM utilities."localities" l
+        JOIN utilities."countries" c ON c."country_id" = l."locality_country_id"
+        WHERE l."locality_postalCode" = $1 AND c."country_legacyCode" = $2::int
+      args: [Codigo_Postal, Pais_Codigo]
+
+  - access: Cliente_Telefono
+    pg: customer_phone
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono1
+    pg: customer_phone1
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono2
+    pg: customer_phone2
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono3
+    pg: customer_phone3
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono4
+    pg: customer_phone4
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Telefono5
+    pg: customer_phone5
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax
+    pg: customer_fax
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax1
+    pg: customer_fax1
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax2
+    pg: customer_fax2
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax3
+    pg: customer_fax3
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax4
+    pg: customer_fax4
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_Fax5
+    pg: customer_fax5
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PaginaWEB
+    pg: customer_webPage
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_EmailGeneral
+    pg: customer_emailGeneral
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_FechaActualizado
+    pg: customer_updatedAt
+    type: access_datetime
+    time_source: Cliente_HoraActualizado
+    nullable: true
+
+  - access: Cliente_UsuarioActualizado
+    pg: customer_updatedBy
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_Categoria
+    pg: customer_category_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+    lookup:
+      table: utilities.customerCategories
+      match: customerCategory_legacyCode
+      select: customerCategory_id
+
+  # Solo aplica con categoria 1; el legacy graba 0 en otro caso.
+  - access: Cliente_Referencia1
+    pg: customer_reference1_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+    lookup:
+      table: utilities.customerReferences
+      match: customerReference_legacyCode
+      select: customerReference_id
+
+  - access: Cliente_Referencia2
+    pg: customer_reference2
+    type: int
+    nullable: true
+
+  - access: Cliente_Precio
+    pg: customer_priceType
+    type: int
+    nullable: true
+
+  - access: Cliente_PosIVA
+    pg: customer_vatPosition
+    type: int
+    nullable: true
+
+  - access: Cliente_CondVta
+    pg: customer_saleCondition
+    type: int
+    nullable: true
+
+  - access: Cliente_CtaCteDias
+    pg: customer_accountDays
+    type: int
+    nullable: true
+
+  - access: Cliente_MonedaCredito
+    pg: customer_creditCurrency
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_Credito
+    pg: customer_creditLimit
+    type: decimal
+    nullable: true
+
+  - access: Cliente_Descuento
+    pg: customer_discount
+    type: decimal
+    nullable: true
+
+  - access: VendedorExterno_Codigo
+    pg: customer_externalSalesperson_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+
+  - access: Cliente_Observacion
+    pg: customer_observation
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_ObservacionesComerciales
+    pg: customer_commercialObservation
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_CondicionIIBB
+    pg: customer_iibbCondition
+    type: int
+    nullable: true
+
+  - access: Cliente_TipoContribuyenteIIBB
+    pg: customer_iibbTaxpayerType
+    type: int
+    nullable: true
+
+  - access: Cliente_NroIIBB
+    pg: customer_iibbNumber
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_PercepcionIIBBMotivo
+    pg: customer_iibbPerceptionReason
+    type: int
+    nullable: true
+
+  - access: Cliente_PercepcionIIBBPorcentaje
+    pg: customer_iibbPerceptionPercentage
+    type: decimal
+    nullable: true
+
+  - access: Cliente_NotaPercepcionIIBB
+    pg: customer_iibbPerceptionNote
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_CoefUnifPciaBsAs
+    pg: customer_unifiedCoefficientPBA
+    type: decimal
+    nullable: true
+
+  - access: Cliente_PagoProveedoresModalidad
+    pg: customer_supplierPaymentMode
+    type: int
+    nullable: true
+
+  - access: Cliente_PagoProveedoresEmail
+    pg: customer_supplierPaymentEmail
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_PagoProveedoresHorarios
+    pg: customer_supplierPaymentSchedule
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresTelefonos
+    pg: customer_supplierPaymentPhones
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresDetalleOtros
+    pg: customer_supplierPaymentOtherDetail
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresObservaciones
+    pg: customer_supplierPaymentObservation
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  # -1 es el centinela legacy de "sin seleccionar".
+  - access: Cliente_PagoProveedoresDepositoCuenta
+    pg: customer_supplierPaymentDepositAccount
+    type: int
+    nullable: true
+    null_sentinels: ["-1"]
+
+  - access: Cliente_PagoProveedoresEnviaCheque
+    pg: customer_supplierPaymentSendsCheck
+    type: int
+    nullable: true
+    null_sentinels: ["-1"]
+
+  - access: Cliente_PagoProveedoresWebPagos
+    pg: customer_supplierPaymentWebPortal
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: Cliente_PagoProveedoresAvisoDePago
+    pg: customer_supplierPaymentNotice
+    type: access_bool
+
+  - access: Cliente_TrabajoOC
+    pg: customer_worksWithPurchaseOrder
+    type: access_bool
+
+  # El legacy guarda el ListIndex del combo: 0 = SI respeta la O/C, 1 = NO.
+  - access: Cliente_RespetarOC
+    pg: customer_respectPurchaseOrder
+    type: access_bool_inverse
+
+  - access: Cliente_FacturarDolarDivisa
+    pg: customer_invoiceInDollarDivisa
+    type: access_bool
+
+  - access: Cliente_OpcionTransferencia
+    pg: customer_transferOption
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+    transform: trim
+
+  - access: Cliente_DEBE
+    pg: customer_debit
+    type: decimal
+    nullable: true
+
+  - access: Cliente_HABER
+    pg: customer_credit
+    type: decimal
+    nullable: true
+
+  - access: Cliente_Pendiente
+    pg: customer_pending
+    type: decimal
+    nullable: true
+
+children:
+  # ------------------------------------------------------------------ SubClientes
+  # No se borran en PG los que faltan en Access: la app tambien crea destinos, y contactos y
+  # presupuestos los referencian.
+  - entity: subClients
+    access:
+      table: SubClientes
+      pk: SubCliente_Codigo
+      parent_fk: Cliente_Codigo
+    postgres:
+      table: subClients
+      pk: subClient_id
+      parent_fk: subClient_customer_id
+      conflict: [subClient_customer_id, subClient_code]
+      delete_missing: false
+    fields:
+      - access: SubCliente_Codigo
+        pg: subClient_code
+        type: int
+
+      - access: SubCliente_Codigo
+        pg: subClient_legacyCode
+        type: int
+
+      - access: SubCliente_Descripcion
+        pg: subClient_description
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Subcliente_Activo
+        pg: subClient_isActive
+        type: access_bool
+
+      - access: VendedorExterno_Codigo
+        pg: subClient_externalSalesperson_id
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+
+      - access: Subcliente_MailCotizaciones
+        pg: subClient_quotationEmail
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      # --- bloque base (destino final de la entrega)
+      - access: SubCliente_Direccion
+        pg: subClient_address
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Pais_Codigo
+        pg: subClient_country_id
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+        lookup:
+          table: utilities.countries
+          match: country_legacyCode
+          select: country_id
+
+      - access: Codigo_Postal
+        pg: subClient_postalCode
+        type: string
+        nullable: true
+        null_sentinels: ["ND", "", " "]
+        transform: trim
+
+      - access: Codigo_Postal
+        pg: subClient_locality_id
+        type: string
+        nullable: true
+        null_sentinels: ["ND", "", " "]
+        lookup:
+          query: >-
+            SELECT l."locality_id" FROM utilities."localities" l
+            JOIN utilities."countries" c ON c."country_id" = l."locality_country_id"
+            WHERE l."locality_postalCode" = $1 AND c."country_legacyCode" = $2::int
+          args: [Codigo_Postal, Pais_Codigo]
+
+      - access: Subcliente_Telefono
+        pg: subClient_phone
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono1
+        pg: subClient_phone1
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono2
+        pg: subClient_phone2
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono3
+        pg: subClient_phone3
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono4
+        pg: subClient_phone4
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono5
+        pg: subClient_phone5
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX
+        pg: subClient_fax
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX1
+        pg: subClient_fax1
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX2
+        pg: subClient_fax2
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX3
+        pg: subClient_fax3
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX4
+        pg: subClient_fax4
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX5
+        pg: subClient_fax5
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      # --- bloque administrativo
+      - access: SubCliente_DireccionAdministrativa
+        pg: subClient_adminAddress
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Codigo_PostalAdministrativa
+        pg: subClient_adminPostalCode
+        type: string
+        nullable: true
+        null_sentinels: ["ND", "", " "]
+        transform: trim
+
+      - access: Subcliente_TelefonoAdministrativa
+        pg: subClient_adminPhone
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono1Administrativa
+        pg: subClient_adminPhone1
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono2Administrativa
+        pg: subClient_adminPhone2
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono3Administrativa
+        pg: subClient_adminPhone3
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono4Administrativa
+        pg: subClient_adminPhone4
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono5Administrativa
+        pg: subClient_adminPhone5
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAXAdministrativa
+        pg: subClient_adminFax
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX1Administrativa
+        pg: subClient_adminFax1
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX2Administrativa
+        pg: subClient_adminFax2
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX3Administrativa
+        pg: subClient_adminFax3
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX4Administrativa
+        pg: subClient_adminFax4
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX5Administrativa
+        pg: subClient_adminFax5
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_InstruccionesAdministrativa
+        pg: subClient_adminInstructions
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: SubCliente_MailEfact
+        pg: subClient_efactEmail
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: SubCliente_MailCuentasAPagar
+        pg: subClient_accountsPayableEmail
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      # --- bloque entrega intermedia
+      - access: SubCliente_DireccionEntregaIntermedia
+        pg: subClient_intermediateAddress
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Codigo_PostalEntregaIntermedia
+        pg: subClient_intermediatePostalCode
+        type: string
+        nullable: true
+        null_sentinels: ["ND", "", " "]
+        transform: trim
+
+      - access: Subcliente_TelefonoEntregaIntermedia
+        pg: subClient_intermediatePhone
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono1EntregaIntermedia
+        pg: subClient_intermediatePhone1
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono2EntregaIntermedia
+        pg: subClient_intermediatePhone2
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono3EntregaIntermedia
+        pg: subClient_intermediatePhone3
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono4EntregaIntermedia
+        pg: subClient_intermediatePhone4
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_Telefono5EntregaIntermedia
+        pg: subClient_intermediatePhone5
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAXEntregaIntermedia
+        pg: subClient_intermediateFax
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX1EntregaIntermedia
+        pg: subClient_intermediateFax1
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX2EntregaIntermedia
+        pg: subClient_intermediateFax2
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX3EntregaIntermedia
+        pg: subClient_intermediateFax3
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX4EntregaIntermedia
+        pg: subClient_intermediateFax4
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_FAX5EntregaIntermedia
+        pg: subClient_intermediateFax5
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Subcliente_TransporteHabitualEntregaIntermedia
+        pg: subClient_intermediateCarrier_id
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+
+      - access: Subcliente_InstruccionesEntregaIntermedia
+        pg: subClient_intermediateInstructions
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      # --- datos de envio
+      - access: Subcliente_Flete
+        pg: subClient_freight
+        type: int
+        nullable: true
+
+      - access: Subcliente_FormaEntrega
+        pg: subClient_deliveryMode
+        type: int
+        nullable: true
+
+      - access: Subcliente_ValorDeclarado
+        pg: subClient_declaredValue
+        type: decimal
+        nullable: true
+
+      - access: Subcliente_ValorDeclaradoMoneda
+        pg: subClient_declaredValueCurrency
+        type: int
+        nullable: true
+
+  # ------------------------------------------------- Jurisdicciones de Convenio Multilateral
+  - entity: customerTaxJurisdictions
+    access:
+      table: Jurisdicciones de IIBB
+      pk: Provincia_CodigoCM
+      parent_fk: Cliente_Codigo
+    postgres:
+      table: customerTaxJurisdictions
+      pk: customerTaxJurisdiction_id
+      parent_fk: customerTaxJurisdiction_customer_id
+      # UQ_CustomerTaxJurisdictions_customer_cmCode (LFSoft-app sales V026).
+      conflict: [customerTaxJurisdiction_customer_id, customerTaxJurisdiction_cmCode]
+      delete_missing: true
+    fields:
+      - access: Provincia_CodigoCM
+        pg: customerTaxJurisdiction_cmCode
+        type: int
+
+      - access: Provincia_CodigoCM
+        pg: customerTaxJurisdiction_province_id
+        type: int
+        lookup:
+          table: utilities.provinces
+          match: province_cmCode
+          select: province_id
+
+
+  # ------------------------------------------------------------------ Contactos
+  # La clave en Clientes.mdb es (cliente, Id_Contacto): el legacy copia contactos de un
+  # cliente a otro conservando el Id_Contacto (38 casos, clientes 612/2254 y 910/2259).
+  # Por eso son una coleccion del cliente y no una entidad propia.
+  # No se borran en PG los que faltan en Access: la app tambien crea contactos.
+  - entity: contacts
+    access:
+      table: Contactos
+      pk: Id_Contacto
+      parent_fk: cliente
+      # El legacy numera Id_Contacto sobre toda la tabla.
+      generate_key: global
+    postgres:
+      table: contacts
+      pk: contact_id
+      parent_fk: contact_customer_id
+      # UQ_Contacts_customer_legacyCode (LFSoft-app sales V026).
+      conflict: [contact_customer_id, contact_legacyCode]
+      delete_missing: false
+    fields:
+      - access: Id_Contacto
+        pg: contact_legacyCode
+        type: int
+
+      # El destino es el par (cliente, codigo de subcliente). 0 = sin asignar.
+      - access: SubCliente_Codigo
+        pg: contact_subClient_id
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+        lookup:
+          query: >-
+            SELECT s."subClient_id" FROM sales."subClients" s
+            JOIN sales."customers" c ON c."customer_id" = s."subClient_customer_id"
+            WHERE c."customer_legacyCode" = $1::int AND s."subClient_code" = $2::int
+          args: [cliente, SubCliente_Codigo]
+          reverse_query: >-
+            SELECT s."subClient_code" FROM sales."subClients" s WHERE s."subClient_id" = $1
+
+      # Texto SI/NO en el legacy.
+      - access: activo
+        pg: contact_isActive
+        type: access_bool
+        map: {"SI": true, "NO": false, "": false}
+
+      - access: caracter
+        pg: contact_title
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: apellido
+        pg: contact_lastName
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: nombre
+        pg: contact_firstName
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: telefono
+        pg: contact_phone
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: TelefonoTrabajoInterno
+        pg: contact_workExtension
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: TelefonoTrabajoDirecto
+        pg: contact_workDirectPhone
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: TelefonoTrabajoFAXDirecto
+        pg: contact_workDirectFax
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: direccion
+        pg: contact_address
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: localidad
+        pg: contact_locality
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: e_mail
+        pg: contact_email
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: cargo
+        pg: contact_position
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: SeccionPrincipal
+        pg: contact_primarySection_id
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+        lookup:
+          table: utilities.contactSections
+          match: contactSection_legacyCode
+          select: contactSection_id
+
+      - access: SeccionSecundaria
+        pg: contact_secondarySection_id
+        type: int
+        nullable: true
+        null_sentinels: ["0"]
+        lookup:
+          table: utilities.contactSections
+          match: contactSection_legacyCode
+          select: contactSection_id
+
+      # Seccion en texto libre, anterior a SeccionPrincipal/SeccionSecundaria.
+      - access: seccion
+        pg: contact_legacySectionText
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+        transform: trim
+
+      - access: Observaciones
+        pg: contact_observation
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      # 1/0 numerico en el legacy, no booleano Jet.
+      - access: ResponsablePagos
+        pg: contact_isPaymentResponsible
+        type: int_bool
+
+      - access: Preferencias
+        pg: contact_preferences
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: Hobby
+        pg: contact_hobby
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      - access: ClubFutbol
+        pg: contact_footballClub
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+      # Texto "dd/mm"; la mascara vacia "__/__" queda NULL.
+      - access: FechaCumpleaños
+        pg: contact_birthDay
+        type: int
+        nullable: true
+        split: {sep: "/", index: 0}
+        # PG -> Access: vuelve a armar "dd/mm"; sin dia o mes, la mascara vacia del legacy.
+        reverse_from: [contact_birthDay, contact_birthMonth]
+        reverse_format: "%02d/%02d"
+        reverse_empty: "__/__"
+
+      - access: FechaCumpleaños
+        pg: contact_birthMonth
+        type: int
+        nullable: true
+        split: {sep: "/", index: 1}
+
+      - access: ObservacionesPersonales
+        pg: contact_personalObservation
+        type: string
+        nullable: true
+        null_sentinels: ["", " "]
+
+    children:
+      # Horarios: sin clave en Access; se identifican por (cliente, contacto, dia).
+      - entity: contactSchedules
+        access:
+          table: Horarios Atencion de Contactos
+          pk: Horario_Dia
+          parent_fk: Id_Contacto
+          root_fk: Cliente_Codigo
+        postgres:
+          table: contactSchedules
+          pk: contactSchedule_id
+          parent_fk: contactSchedule_contact_id
+          conflict: [contactSchedule_contact_id, contactSchedule_dayCode]
+          delete_missing: true
+        fields:
+          # Mismo catalogo que el seed (sales V018): numeracion contigua 1..9.
+          - access: Horario_Dia
+            pg: contactSchedule_dayCode
+            type: int
+            map: &dias
+              "Lunes-Miercoles-Viernes": 1
+              "Lunes-Miércoles-Viernes": 1
+              "Martes-Jueves": 2
+              "Lunes a Viernes": 3
+              "Lunes": 4
+              "Martes": 5
+              "Miercoles": 6
+              "Miércoles": 6
+              "Jueves": 7
+              "Viernes": 8
+              "Sabado": 9
+              "Sábado": 9
+
+          - access: Horario_Dia
+            pg: contactSchedule_dayOrder
+            type: int
+            map: *dias
+
+          - access: Horario_Horarios
+            pg: contactSchedule_freeText
+            type: string
+            nullable: true
+            null_sentinels: ["", " "]
+
+
+sync:
+  interval: 3s
+  batch_size: 100
+  direction: both
+  generate_key: true

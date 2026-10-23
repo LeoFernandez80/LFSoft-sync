@@ -91,3 +91,46 @@ func (r *PGReader) ReadByIDs(ctx context.Context, ids []int64) ([]Row, error) {
 	}
 	return result, rows.Err()
 }
+
+// ReadChildren returns one parent's rows of a child collection, each with its PG PK, in PK
+// order (the order they were created).
+func (r *PGReader) ReadChildren(ctx context.Context, ch *config.ChildConfig, parentID int64) ([]Row, error) {
+	cols := []string{ch.PG.PK}
+	seen := map[string]bool{ch.PG.PK: true}
+	for _, f := range ch.Fields {
+		if !seen[f.PG] {
+			cols = append(cols, f.PG)
+			seen[f.PG] = true
+		}
+	}
+	quoted := make([]string, len(cols))
+	for i, c := range cols {
+		quoted[i] = fmt.Sprintf(`"%s"`, c)
+	}
+	q := fmt.Sprintf(`SELECT %s FROM %s."%s" WHERE "%s" = $1 ORDER BY "%s"`,
+		strings.Join(quoted, ", "), r.cfg.PG.Schema, ch.PG.Table, ch.PG.ParentFK, ch.PG.PK)
+
+	rows, err := r.pool.Query(ctx, q, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", ch.PG.Table, err)
+	}
+	defer rows.Close()
+
+	var result []Row
+	for rows.Next() {
+		dest := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range dest {
+			ptrs[i] = &dest[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		row := make(Row, len(cols))
+		for i, col := range cols {
+			row[col] = dest[i]
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}

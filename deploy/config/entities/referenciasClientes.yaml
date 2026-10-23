@@ -1,0 +1,49 @@
+# Referencias de cliente (Clientes.mdb, Referencia1) -> utilities."customerReferences".
+# Ida y vuelta. Las filas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
+# Clave: Codigo = customerReference_legacyCode. La categoria se resuelve por su legacyCode,
+# por eso va despues de categoriasClientes.yaml.
+entity: customerReferences
+enabled: true
+load_order: 17
+
+access:
+  mdb: Clientes.mdb
+  table: Referencia1
+  pk: Codigo
+  pk_type: long
+
+postgres:
+  schema: utilities
+  table: customerReferences
+  pk: customerReference_id
+  business_key: customerReference_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: Codigo
+    pg: customerReference_legacyCode
+    type: int
+
+  - access: Descripcion
+    pg: customerReference_description
+    type: string
+    transform: trim
+
+  - access: Categoria_Codigo
+    pg: customerReference_category_id
+    type: int
+    lookup:
+      table: utilities.customerCategories
+      match: customerCategory_legacyCode
+      select: customerCategory_id
+
+sync:
+  interval: 30s
+  batch_size: 100
+  direction: both
+  generate_key: true

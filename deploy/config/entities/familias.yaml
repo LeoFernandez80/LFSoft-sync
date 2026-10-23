@@ -1,0 +1,39 @@
+# Familias (Articulo.mdb) <-> articulos.familias. PK directa: familia_id = Familia_Codigo.
+# Las altas desde la app piden el codigo al sync (/sync/next-id/familias, MAX de Access y PG + 1),
+# asi el VB6 y la app nunca usan el mismo codigo.
+# Sin mapear (quedan en Access): Imagen. familia_isActive no existe en el legacy (queda en PG).
+entity: familias
+enabled: true
+load_order: 10
+
+access:
+  mdb: Articulo.mdb
+  table: Familias
+  pk: Familia_Codigo
+  pk_type: byte
+
+postgres:
+  schema: articulos
+  table: familias
+  pk: familia_id
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 30m
+  change_scan_interval: 30s
+
+fields:
+  - access: Familia_Codigo
+    pg: familia_id
+    type: int
+
+  - access: Familia_Descripcion
+    pg: familia_descripcion
+    type: string
+    transform: trim
+
+sync:
+  interval: 10s
+  batch_size: 50
+  direction: both

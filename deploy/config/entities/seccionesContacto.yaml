@@ -1,0 +1,40 @@
+# Secciones de contacto (Clientes.mdb, Secciones) -> utilities."contactSections".
+# Ida y vuelta. Las filas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
+# Clave: Seccion_Codigo = contactSection_legacyCode.
+entity: contactSections
+enabled: true
+load_order: 13
+
+access:
+  mdb: Clientes.mdb
+  table: Secciones
+  pk: Seccion_Codigo
+  pk_type: long
+
+postgres:
+  schema: utilities
+  table: contactSections
+  pk: contactSection_id
+  business_key: contactSection_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: Seccion_Codigo
+    pg: contactSection_legacyCode
+    type: int
+
+  - access: Seccion_Descripcion
+    pg: contactSection_description
+    type: string
+    transform: trim
+
+sync:
+  interval: 30s
+  batch_size: 100
+  direction: both
+  generate_key: true

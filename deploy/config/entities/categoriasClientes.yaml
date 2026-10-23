@@ -1,0 +1,40 @@
+# Categorias de cliente (Clientes.mdb, Categorias) -> utilities."customerCategories".
+# Ida y vuelta. Las filas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
+# Clave: Categoria_Codigo = customerCategory_legacyCode.
+entity: customerCategories
+enabled: true
+load_order: 13
+
+access:
+  mdb: Clientes.mdb
+  table: Categorias
+  pk: Categoria_Codigo
+  pk_type: long
+
+postgres:
+  schema: utilities
+  table: customerCategories
+  pk: customerCategory_id
+  business_key: customerCategory_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: Categoria_Codigo
+    pg: customerCategory_legacyCode
+    type: int
+
+  - access: Categoria_Descripcion
+    pg: customerCategory_description
+    type: string
+    transform: trim
+
+sync:
+  interval: 30s
+  batch_size: 100
+  direction: both
+  generate_key: true

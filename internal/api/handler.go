@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lfsoft/shared/accessdb"
 	"github.com/lfsoft/sync/internal/config"
+	"github.com/lfsoft/sync/internal/reader"
 )
 
 type Handler struct {
@@ -100,9 +101,8 @@ func (h *Handler) maxAccessPK(ctx context.Context, ec *config.EntityConfig) (int
 		return 0, fmt.Errorf("no connection for %s", ec.Access.MDB)
 	}
 	q := fmt.Sprintf("SELECT MAX(%s) FROM %s", ec.Access.PK, ec.Access.Table)
-	row := conn.QueryRow(ctx, q)
 	var max *int64
-	if err := row.Scan(&max); err != nil {
+	if err := reader.QueryOne(ctx, conn, q, &max); err != nil {
 		return 0, err
 	}
 	if max == nil {

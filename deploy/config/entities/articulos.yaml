@@ -1,5 +1,6 @@
 entity: articles
 enabled: true
+load_order: 20
 
 access:
   mdb: Articulo.mdb
@@ -17,6 +18,7 @@ detection:
   access_to_pg: max_pk
   pg_to_access: trigger
   full_scan_interval: 5m
+  change_scan_interval: 5s
 
 fields:
   - access: Articulo_Codigo
@@ -235,9 +237,42 @@ fields:
     pg: articulo_grupo_id
     type: int
 
+  # Criterio de precios: en Access (Criterio_ListaPrecios_Codigo, Criterio_SubGrupo_Codigo),
+  # unico por lista en precios.criterios; en PG un solo id (sin FK, otro schema). 0/0 o un par
+  # sin criterio en PG = NULL; de vuelta, NULL escribe 0 en las dos columnas.
+  - access: Criterio_SubGrupo_Codigo
+    pg: articulo_criterio_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+    lookup:
+      query: >-
+        SELECT c."criterio_id" FROM precios."criterios" c
+        JOIN precios."listasPrecios" l ON l."listaPrecios_id" = c."criterio_listaPrecios_id"
+        WHERE l."listaPrecios_legacyCode" = $1::int AND c."criterio_subGrupoCodigo" = $2::int
+      args: [Criterio_ListaPrecios_Codigo, Criterio_SubGrupo_Codigo]
+      reverse_query: >-
+        SELECT c."criterio_subGrupoCodigo" FROM precios."criterios" c WHERE c."criterio_id" = $1
+
+  # Segunda columna de la clave: solo PG -> Access, a partir del mismo id.
+  - access: Criterio_ListaPrecios_Codigo
+    pg: articulo_criterio_id
+    type: int
+    nullable: true
+    null_sentinels: ["0"]
+    reverse_only: true
+    lookup:
+      reverse_query: >-
+        SELECT l."listaPrecios_legacyCode" FROM precios."criterios" c
+        JOIN precios."listasPrecios" l ON l."listaPrecios_id" = c."criterio_listaPrecios_id"
+        WHERE c."criterio_id" = $1
+
+  # 12.124 articulos tienen la unidad en NULL o 0 y la columna es NOT NULL con FK: van a 1
+  # (Unidades), la unidad por defecto del legacy.
   - access: Articulo_UnidadMedida
     pg: articulo_unidadMedida_id
     type: int
+    zero_default: 1
 
   - access: Articulo_RefProvUnidadMedida
     pg: articulo_refProvUnidadMedida_id
@@ -260,6 +295,6 @@ fields:
     type: access_bool_inverse
 
 sync:
-  interval: 10s
+  interval: 3s
   batch_size: 100
   direction: both

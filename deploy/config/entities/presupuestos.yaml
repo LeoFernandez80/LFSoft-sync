@@ -88,16 +88,21 @@ fields:
     null_sentinels: ["", " "]
     transform: trim
 
+  # Codigos del VB6 (GENERAL.BAS): INT_DOLARES = 0, INT_PESOS = 1, 2 = euros. precios.monedas
+  # tiene otro orden (1 $, 2 U$S, 3 €), asi que no alcanza con un offset: con offset 1 los
+  # presupuestos en dolares quedaban como Pesos y al reves.
   - access: Presupuesto_Moneda
     pg: quote_currency_id
     type: int
-    offset: 1
+    map: &moneda
+      "0": 2
+      "1": 1
+      "2": 3
 
-  # type int: el offset (codigo 0-based del legacy -> moneda_id) solo se aplica a enteros.
   - access: Presupuesto_Moneda
     pg: quote_currencyName
     type: int
-    offset: 1
+    map: *moneda
     lookup:
       table: precios.monedas
       match: moneda_id

@@ -294,3 +294,47 @@ func TestDateNullBefore(t *testing.T) {
 		t.Fatalf("real date = %v", v)
 	}
 }
+
+// La moneda del presupuesto: los codigos del VB6 (0 U$S, 1 $, 2 €) no siguen el orden de
+// precios.monedas (1 $, 2 U$S, 3 €), asi que va con map y no con offset, de ida y de vuelta.
+func TestQuoteCurrencyMapRoundTrip(t *testing.T) {
+	moneda := map[string]interface{}{"0": 2, "1": 1, "2": 3}
+	cfg := &config.EntityConfig{
+		Access: config.AccessConfig{PK: "Id"},
+		Fields: []config.FieldMap{
+			{Access: "Id", PG: "id_legacy", Type: "int"},
+			{Access: "Moneda", PG: "currency_id", Type: "int", Map: moneda},
+			{Access: "Moneda", PG: "currency_name", Type: "int", Map: moneda,
+				Lookup: &config.Lookup{Table: "precios.monedas", Match: "moneda_id", Select: "moneda_descripcion"}},
+		},
+	}
+	lk := &fakeLookup{table: map[string]interface{}{"|1": "Pesos", "|2": "Dólar", "|3": "Euro"}}
+
+	fw := NewForward(cfg).With(Resolvers{Lookup: lk})
+	for legacy, want := range map[int32]struct {
+		id   int64
+		name string
+	}{0: {2, "Dólar"}, 1: {1, "Pesos"}, 2: {3, "Euro"}} {
+		mr, err := fw.Map(reader.Row{"Id": int32(1), "Moneda": legacy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := valueOf(t, mr, "currency_id"); got != want.id {
+			t.Errorf("Moneda %d -> currency_id %#v, se esperaba %d", legacy, got, want.id)
+		}
+		if got := valueOf(t, mr, "currency_name"); got != want.name {
+			t.Errorf("Moneda %d -> currency_name %#v, se esperaba %s", legacy, got, want.name)
+		}
+	}
+
+	rv := NewReverse(cfg).With(Resolvers{Lookup: lk})
+	am, err := rv.Map(reader.Row{"id_legacy": int32(1), "currency_id": int32(2), "currency_name": "Dólar"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range am.AccessCols {
+		if c == "Moneda" && am.AccessVals[i] != "0" {
+			t.Errorf("currency_id 2 -> Moneda %#v, se esperaba \"0\" (dolares)", am.AccessVals[i])
+		}
+	}
+}

@@ -264,9 +264,12 @@ settings|settings|V116__seed_literals_and_grid_columns_sales_price_list_factors.
 settings|settings|V117__seed_literals_and_grid_columns_price_updates.up.sql
 settings|settings|V118__seed_literals_matrix_conditions_and_cases.up.sql
 settings|settings|V119__seed_literals_and_grid_columns_quote_item_progress.up.sql
+settings|settings|V120__seed_literals_quote_line_legacy_frames.up.sql
 settings|settings|V121__seed_literals_quote_stock_withdrawal.up.sql
 settings|settings|V122__seed_literals_and_grid_columns_quote_totals.up.sql
 settings|settings|V123__seed_literals_and_grid_columns_quote_item_totals.up.sql
+settings|settings|V124__seed_literals_and_grid_columns_quote_taxes.up.sql
+settings|settings|V125__seed_literals_quote_vat_rate.up.sql
 sales|sales|V001__create_quotes_table.up.sql
 sales|sales|V002__create_quoteItems_table.up.sql
 sales|sales|V003__create_quoteItemDetails_table.up.sql
@@ -308,3 +311,6 @@ articulos|articulos|V030__access_control_user_name_nullable.up.sql
 articulos|articulos|V031__add_articulo_criterio_inSupplierList.up.sql
 sales|sales|V025__create_quoteItemWithdrawals.up.sql
 sales|sales|V026__add_sync_keys.up.sql
+sales|sales|V027__line_total_without_discount.up.sql
+sales|sales|V028__fix_quote_currency_and_add_tax_totals.up.sql
+sales|sales|V029__add_quote_source_and_vat_rate.up.sql

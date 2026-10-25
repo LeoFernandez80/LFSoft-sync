@@ -181,6 +181,11 @@ seguridad|seguridad|V068__seed_grid_row_actions_sales_price_list_factors.up.sql
 seguridad|seguridad|V069__translate_permission_action_descriptions.up.sql
 seguridad|seguridad|V070__seed_grid_actions_price_updates.up.sql
 seguridad|seguridad|V071__create_matrix_condition_layouts.up.sql
+seguridad|seguridad|V072__hide_quote_item_real_amounts_grid.up.sql
+seguridad|seguridad|V073__quote_item_to_invoice_deliver_enablement.up.sql
+seguridad|seguridad|V074__seed_quote_stock_grids.up.sql
+seguridad|seguridad|V075__seed_quote_totals_bar.up.sql
+seguridad|seguridad|V076__seed_quote_item_totals_bars.up.sql
 articulos|articulos|V001__create_familias_table.up.sql
 articulos|articulos|V002__create_grupos_table.up.sql
 articulos|articulos|V003__create_unidadesMedida_table.up.sql
@@ -258,6 +263,10 @@ settings|settings|V115__seed_literals_dashboards.up.sql
 settings|settings|V116__seed_literals_and_grid_columns_sales_price_list_factors.up.sql
 settings|settings|V117__seed_literals_and_grid_columns_price_updates.up.sql
 settings|settings|V118__seed_literals_matrix_conditions_and_cases.up.sql
+settings|settings|V119__seed_literals_and_grid_columns_quote_item_progress.up.sql
+settings|settings|V121__seed_literals_quote_stock_withdrawal.up.sql
+settings|settings|V122__seed_literals_and_grid_columns_quote_totals.up.sql
+settings|settings|V123__seed_literals_and_grid_columns_quote_item_totals.up.sql
 sales|sales|V001__create_quotes_table.up.sql
 sales|sales|V002__create_quoteItems_table.up.sql
 sales|sales|V003__create_quoteItemDetails_table.up.sql

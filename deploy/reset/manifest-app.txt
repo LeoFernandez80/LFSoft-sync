@@ -186,6 +186,8 @@ seguridad|seguridad|V073__quote_item_to_invoice_deliver_enablement.up.sql
 seguridad|seguridad|V074__seed_quote_stock_grids.up.sql
 seguridad|seguridad|V075__seed_quote_totals_bar.up.sql
 seguridad|seguridad|V076__seed_quote_item_totals_bars.up.sql
+seguridad|seguridad|V077__regenerate_quote_legacy_profiles_security.up.sql
+seguridad|seguridad|V078__seed_article_legacy_profiles_security.up.sql
 articulos|articulos|V001__create_familias_table.up.sql
 articulos|articulos|V002__create_grupos_table.up.sql
 articulos|articulos|V003__create_unidadesMedida_table.up.sql

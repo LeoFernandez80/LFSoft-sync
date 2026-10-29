@@ -287,6 +287,7 @@ settings|settings|V130__seed_literals_quote_commercial_rules.up.sql
 settings|settings|V131__seed_literals_quote_commercial_drawer.up.sql
 settings|settings|V132__seed_literals_quote_data_dialog_second_pass.up.sql
 settings|settings|V133__seed_literals_external_salespeople.up.sql
+settings|settings|V134__seed_literals_quote_commercial_drawer_layout.up.sql
 sales|sales|V001__create_quotes_table.up.sql
 sales|sales|V002__create_quoteItems_table.up.sql
 sales|sales|V003__create_quoteItemDetails_table.up.sql

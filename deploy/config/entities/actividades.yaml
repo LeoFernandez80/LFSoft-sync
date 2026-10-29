@@ -2,8 +2,10 @@
 # actividad_codigo (APRA01, APRB02...), el codigo con el que el negocio las nombra y con el que
 # los items de presupuesto resuelven su actividad. articulos V014 siembra las 30 del legacy;
 # el sync las completa y corrige.
-# Sin mapear (quedan en Access): Representa, Observaciones, Definicion, Implica,
-# ImplicaProvisorio, PTGNumero, PTGVersion. actividad_isActive no existe en el legacy.
+# Sin mapear (quedan en Access): Observaciones, Definicion, Implica, ImplicaProvisorio,
+# PTGNumero, PTGVersion. actividad_isActive no existe en el legacy.
+# Actividad_Representa (articulos V032) elige la cuenta contable del item del presupuesto
+# junto con la jurisdiccion CM (cuentasContables.yaml).
 entity: actividades
 enabled: true
 load_order: 12
@@ -41,6 +43,12 @@ fields:
   - access: Actividad_ColorHojaRGB
     pg: actividad_colorHojaRgb
     type: string
+    nullable: true
+
+  # 1 ventas, 2 fabricacion, 3 compra.
+  - access: Actividad_Representa
+    pg: actividad_accountingType
+    type: int
     nullable: true
 
 sync:

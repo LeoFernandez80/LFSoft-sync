@@ -1,0 +1,59 @@
+# Cuentas contables (Utilidades.mdb, [Cuentas Contables]) <-> utilities.accountingAccounts
+# (utilities V025). Ida y vuelta. La clave es el codigo de texto (CuentaContable_Codigo =
+# accountingAccount_code), el que guarda el item del presupuesto: no se genera (la app no da
+# de alta cuentas).
+# La cuenta de un item sale de (Provincia_CodigoCM, Actividad_Representa): BuscarCuentaContable.
+entity: accountingAccounts
+enabled: true
+load_order: 13
+
+access:
+  mdb: Utilidades.mdb
+  table: "[Cuentas Contables]"
+  pk: CuentaContable_Codigo
+  pk_type: text
+
+postgres:
+  schema: utilities
+  table: accountingAccounts
+  pk: accountingAccount_id
+  business_key: accountingAccount_code
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: CuentaContable_Codigo
+    pg: accountingAccount_code
+    type: string
+    transform: trim
+
+  - access: CuentaContable_Descripcion
+    pg: accountingAccount_description
+    type: string
+    transform: trim
+    nullable: true
+
+  - access: "CuentaContable_Observación"
+    pg: accountingAccount_notes
+    type: string
+    nullable: true
+    null_sentinels: [""]
+
+  - access: Provincia_CodigoCM
+    pg: accountingAccount_provinceCmCode
+    type: int
+    nullable: true
+
+  - access: Actividad_Representa
+    pg: accountingAccount_activityType
+    type: int
+    nullable: true
+
+sync:
+  interval: 30s
+  batch_size: 100
+  direction: both

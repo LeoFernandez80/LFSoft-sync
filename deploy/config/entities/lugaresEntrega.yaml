@@ -1,0 +1,42 @@
+# Lugares de entrega (Presup.mdb, [Lugares de Entrega]) -> sales.deliveryPlaces (sales V030).
+# Ida y vuelta. Las filas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
+# El presupuesto no referencia la fila: guarda el texto "ID - Descripcion" en
+# Presupuesto_LugarEntrega / quote_deliveryPlace. El ID 1 habilita el transporte.
+# Clave: LugarEntrega_ID = deliveryPlace_legacyCode.
+entity: deliveryPlaces
+enabled: true
+load_order: 13
+
+access:
+  mdb: Presup.mdb
+  table: "[Lugares de Entrega]"
+  pk: LugarEntrega_ID
+  pk_type: byte
+
+postgres:
+  schema: sales
+  table: deliveryPlaces
+  pk: deliveryPlace_id
+  business_key: deliveryPlace_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: LugarEntrega_ID
+    pg: deliveryPlace_legacyCode
+    type: int
+
+  - access: LugarEntrega_Descripcion
+    pg: deliveryPlace_description
+    type: string
+    transform: trim
+
+sync:
+  interval: 30s
+  batch_size: 100
+  direction: both
+  generate_key: true

@@ -188,6 +188,12 @@ seguridad|seguridad|V075__seed_quote_totals_bar.up.sql
 seguridad|seguridad|V076__seed_quote_item_totals_bars.up.sql
 seguridad|seguridad|V077__regenerate_quote_legacy_profiles_security.up.sql
 seguridad|seguridad|V078__seed_article_legacy_profiles_security.up.sql
+seguridad|seguridad|V079__create_business_rules_catalog.up.sql
+seguridad|seguridad|V080__seed_business_rules_admin_screen.up.sql
+seguridad|seguridad|V081__seed_quote_commercial_business_rules.up.sql
+seguridad|seguridad|V082__regenerate_quote_security_fabrem_commercial.up.sql
+seguridad|seguridad|V083__seed_quote_initial_decision_and_delivery_actions.up.sql
+seguridad|seguridad|V084__regenerate_quote_security_decision_delivery_actions.up.sql
 articulos|articulos|V001__create_familias_table.up.sql
 articulos|articulos|V002__create_grupos_table.up.sql
 articulos|articulos|V003__create_unidadesMedida_table.up.sql
@@ -244,6 +250,7 @@ utilities|utilities|V021__add_geo_audit_columns.up.sql
 utilities|utilities|V022__add_geo_createdAt_indexes.up.sql
 utilities|utilities|V023__promote_geo_name_unique_constraints.up.sql
 utilities|utilities|V024__employees_identity_by_default.up.sql
+utilities|utilities|V025__create_accounting_accounts_table.up.sql
 settings|settings|V098__seed_literals_customer_supplier_payment_drawer.up.sql
 settings|settings|V099__seed_literals_quote_documentation_audit.up.sql
 settings|settings|V100__seed_literals_quote_line_out_of_stock.up.sql
@@ -272,6 +279,14 @@ settings|settings|V122__seed_literals_and_grid_columns_quote_totals.up.sql
 settings|settings|V123__seed_literals_and_grid_columns_quote_item_totals.up.sql
 settings|settings|V124__seed_literals_and_grid_columns_quote_taxes.up.sql
 settings|settings|V125__seed_literals_quote_vat_rate.up.sql
+settings|settings|V126__seed_literals_quote_work_order.up.sql
+settings|settings|V127__seed_literals_business_rules.up.sql
+settings|settings|V128__seed_literals_business_rules_screen.up.sql
+settings|settings|V129__update_literal_precio_lista_hidramic.up.sql
+settings|settings|V130__seed_literals_quote_commercial_rules.up.sql
+settings|settings|V131__seed_literals_quote_commercial_drawer.up.sql
+settings|settings|V132__seed_literals_quote_data_dialog_second_pass.up.sql
+settings|settings|V133__seed_literals_external_salespeople.up.sql
 sales|sales|V001__create_quotes_table.up.sql
 sales|sales|V002__create_quoteItems_table.up.sql
 sales|sales|V003__create_quoteItemDetails_table.up.sql
@@ -311,8 +326,11 @@ articulos|articulos|V028__paridades_articulos_sync_keys.up.sql
 articulos|articulos|V029__stock_lines_allow_zero_quantity.up.sql
 articulos|articulos|V030__access_control_user_name_nullable.up.sql
 articulos|articulos|V031__add_articulo_criterio_inSupplierList.up.sql
+articulos|articulos|V032__add_actividad_accounting_type.up.sql
 sales|sales|V025__create_quoteItemWithdrawals.up.sql
 sales|sales|V026__add_sync_keys.up.sql
 sales|sales|V027__line_total_without_discount.up.sql
 sales|sales|V028__fix_quote_currency_and_add_tax_totals.up.sql
 sales|sales|V029__add_quote_source_and_vat_rate.up.sql
+sales|sales|V030__create_delivery_places_and_work_order_prints.up.sql
+sales|sales|V031__create_external_salespeople.up.sql

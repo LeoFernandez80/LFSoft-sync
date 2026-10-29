@@ -1,0 +1,65 @@
+# Impresiones de OT (Presup.mdb, Impresion) <-> sales.quoteWorkOrderPrints (sales V030).
+# Ida y vuelta: el VB6 inserta al imprimir la OT (PRELIMIN.FRM) y cambia el estado desde
+# Datos_pr.frm; la app hace lo mismo (POST/PUT /sales/quotes/:id/work-order-prints).
+# Las filas creadas en la app reciben ID legacy (MAX + 1, generate_key).
+# Se relaciona por numero de presupuesto, como el legacy: hay impresiones de presupuestos que
+# no se migraron y entran igual.
+# Impresion_Usr es el codigo de usuario del VB6; las impresiones de la app viajan con 0 (el
+# nombre de quien imprimio, quoteWorkOrderPrint_userName, queda en PG).
+# Clave: ID = quoteWorkOrderPrint_legacyCode.
+entity: quoteWorkOrderPrints
+enabled: true
+load_order: 52
+
+access:
+  mdb: Presup.mdb
+  table: Impresion
+  pk: ID
+  pk_type: long
+
+postgres:
+  schema: sales
+  table: quoteWorkOrderPrints
+  pk: quoteWorkOrderPrint_id
+  business_key: quoteWorkOrderPrint_legacyCode
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 1m
+
+fields:
+  - access: ID
+    pg: quoteWorkOrderPrint_legacyCode
+    type: int
+
+  - access: Presupuesto_Numero
+    pg: quoteWorkOrderPrint_quoteNumber
+    type: int
+
+  - access: Impresion_Fecha
+    pg: quoteWorkOrderPrint_printedAt
+    type: date
+
+  - access: Impresion_Usr
+    pg: quoteWorkOrderPrint_userLegacyCode
+    type: int
+    zero_default: 0
+
+  - access: Estado
+    pg: quoteWorkOrderPrint_status
+    type: int
+    zero_default: 0
+
+  - access: Impresion_AnuladaMotivo
+    pg: quoteWorkOrderPrint_voidReason
+    type: string
+    nullable: true
+    null_sentinels: [""]
+
+sync:
+  interval: 10s
+  batch_size: 200
+  direction: both
+  generate_key: true

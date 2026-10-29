@@ -1,0 +1,100 @@
+# Vendedores externos (Vendedores Externos.mdb, [Vendedores Externos]) <-> sales.externalSalespeople
+# (sales V031), con sus comisiones especiales como coleccion. Ida y vuelta.
+# Clave: VendedorExterno_Codigo = externalSalesperson_code. Presupuesto, cliente y subcliente
+# guardan ese codigo (no el id), asi que las filas creadas en la app reciben codigo legacy
+# (MAX + 1, generate_key).
+#
+# [Comisiones Especiales] no tiene clave en Access: se identifica por (vendedor, cliente,
+# subcliente), el UQ de sales V031, y con esas columnas se ubica tambien en Access
+# (access.keys). No se borran de un lado las que falten del otro, asi una comision recien
+# cargada no se pierde antes de cruzar.
+# Las liquidaciones de comisiones no se migran todavia (modulo pendiente, RFC §16 B14) y
+# [Vendedores Externos Abiertos] es el bloqueo por terminal del VB6.
+entity: externalSalespeople
+enabled: true
+load_order: 13
+
+access:
+  mdb: Vendedores Externos.mdb
+  table: "[Vendedores Externos]"
+  pk: VendedorExterno_Codigo
+  pk_type: long
+
+postgres:
+  schema: sales
+  table: externalSalespeople
+  pk: externalSalesperson_id
+  business_key: externalSalesperson_code
+
+detection:
+  access_to_pg: max_pk
+  pg_to_access: trigger
+  full_scan_interval: 60m
+  change_scan_interval: 5m
+
+fields:
+  - access: VendedorExterno_Codigo
+    pg: externalSalesperson_code
+    type: int
+
+  - access: VendedorExterno_Nombre
+    pg: externalSalesperson_name
+    type: string
+    transform: trim
+
+  - access: VendedorExterno_Comision
+    pg: externalSalesperson_commission
+    type: decimal
+
+  - access: VendedorExterno_Email
+    pg: externalSalesperson_email
+    type: string
+    nullable: true
+    null_sentinels: ["", " "]
+
+  - access: VendedorExterno_Observacion
+    pg: externalSalesperson_notes
+    type: string
+    nullable: true
+    null_sentinels: [""]
+
+  - access: VendedorExterno_ObservacionRTF
+    pg: externalSalesperson_notesRtf
+    type: string
+    nullable: true
+    null_sentinels: [""]
+
+children:
+  - entity: externalSalespersonSpecialCommissions
+    access:
+      table: "[Comisiones Especiales]"
+      pk: Subcliente_Codigo
+      parent_fk: VendedorExterno_Codigo
+      keys: [Cliente_Codigo]
+    postgres:
+      table: externalSalespersonSpecialCommissions
+      pk: externalSalespersonSpecialCommission_id
+      parent_fk: externalSalespersonSpecialCommission_externalSalesperson_id
+      conflict:
+        - externalSalespersonSpecialCommission_externalSalesperson_id
+        - externalSalespersonSpecialCommission_customerCode
+        - externalSalespersonSpecialCommission_subClientCode
+      delete_missing: false
+    fields:
+      - access: Cliente_Codigo
+        pg: externalSalespersonSpecialCommission_customerCode
+        type: int
+
+      - access: Subcliente_Codigo
+        pg: externalSalespersonSpecialCommission_subClientCode
+        type: int
+
+      - access: VendedorExterno_Comision
+        pg: externalSalespersonSpecialCommission_commission
+        type: decimal
+
+sync:
+  interval: 30s
+  batch_size: 100
+  direction: both
+  generate_key: true

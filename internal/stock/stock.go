@@ -1,5 +1,5 @@
 // Package stock synchronizes stock movements between the legacy Stock table (Articulo.mdb) and
-// articulos."stockMovements" + "stockMovementLines".
+// stock."stockMovements" + "stockMovementLines".
 //
 // The two models don't map field by field, so this is not a generic entity:
 //   - Legacy: one Stock row per line, header fields repeated on each row, no line key. Every
@@ -411,7 +411,7 @@ func (s *Syncer) loadLookups(ctx context.Context) (*lookups, error) {
 		return nil, fmt.Errorf("types: %w", err)
 	}
 	// Lowest id wins on codes that differ only in case (Jet compares case-insensitively).
-	if err := load(fmt.Sprintf(`SELECT "articulo_id", "articulo_codigo" FROM %s."articulos" ORDER BY "articulo_id"`, sch), func(r pgx.Rows) error {
+	if err := load(`SELECT "articulo_id", "articulo_codigo" FROM articulos."articulos" ORDER BY "articulo_id"`, func(r pgx.Rows) error {
 		var id int64
 		var code string
 		if err := r.Scan(&id, &code); err != nil {

@@ -1,6 +1,6 @@
 -- Migration V013: triggers for the quote catalogs added on 2026-10-27 (LFSoft-app sales V030,
 -- utilities V025): delivery places, OT prints and accounting accounts. Idempotent.
--- Requires sync.notify_change (V001/V006). articulos.actividades already has its trigger
+-- Requires sync.notify_change (V001/V006). actividades already has its trigger
 -- (V011); its new column actividad_accountingType only needs the entity mapping.
 
 DROP TRIGGER IF EXISTS trg_deliveryPlaces_sync ON sales."deliveryPlaces";

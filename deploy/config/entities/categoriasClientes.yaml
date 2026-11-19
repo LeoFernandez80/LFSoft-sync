@@ -1,4 +1,4 @@
-# Categorias de cliente (Clientes.mdb, Categorias) -> utilities."customerCategories".
+# Categorias de cliente (Clientes.mdb, Categorias) -> sales."customerCategories" (ex utilities, LFSoft-app sales V033).
 # Ida y vuelta. Las filas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
 # Clave: Categoria_Codigo = customerCategory_legacyCode.
 entity: customerCategories
@@ -12,7 +12,7 @@ access:
   pk_type: long
 
 postgres:
-  schema: utilities
+  schema: sales
   table: customerCategories
   pk: customerCategory_id
   business_key: customerCategory_legacyCode

@@ -1,5 +1,6 @@
--- Migration V007: sync trigger for articulos.paridades. Idempotent.
-DROP TRIGGER IF EXISTS trg_paridades_sync ON articulos.paridades;
-CREATE TRIGGER trg_paridades_sync
-    AFTER INSERT OR UPDATE OR DELETE ON articulos.paridades
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_change('paridades', 'paridad_id');
+-- Migration V007: sync trigger for paridades. Idempotent.
+-- The trigger now lives in V016, which creates it on whichever schema holds the table
+-- (articulos in bases older than LFSoft-app utilities V026, utilities afterwards). Bases
+-- where this migration already ran keep the trigger: it travels with the table on
+-- ALTER TABLE ... SET SCHEMA.
+SELECT 1;

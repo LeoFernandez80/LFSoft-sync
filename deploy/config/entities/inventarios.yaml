@@ -1,5 +1,5 @@
 # Inventarios fisicos (Articulo.mdb: Inventario + [Detalle Inventario]) <->
-# articulos."stockInventories" + "stockInventoryLines", ida y vuelta (documento completo).
+# stock."stockInventories" + "stockInventoryLines", ida y vuelta (documento completo).
 # Clave: Inventario_Numero = stockInventory_number; cada linea es (inventario, Articulo_Pos), el
 # UQ (inventory_id, position) de articulos V022.
 # Los ajustes 7/58 que genera un inventario son movimientos de stock (movimientosStock.yaml):
@@ -19,7 +19,7 @@ access:
   pk_type: long
 
 postgres:
-  schema: articulos
+  schema: stock
   table: stockInventories
   pk: stockInventory_id
   business_key: stockInventory_number

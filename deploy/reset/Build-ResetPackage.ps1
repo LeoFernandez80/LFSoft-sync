@@ -78,7 +78,11 @@ $lines = @(
     "# El orden intercala dominios por sus referencias cruzadas:",
     "#   seguridad V027 -> settings.literal_keys; utilities V002 -> settings.module_options;",
     "#   settings V098 -> utilities.banks; sales V009 -> seguridad.users; sales V010 -> articulos.actividades;",
-    "#   sales V014 -> catalogos de utilities; articulos V017 -> sales.customers; sales V025 -> articulos.stockMovements.",
+    "#   sales V014 -> catalogos de utilities; articulos V017 -> sales.customers; sales V025 -> articulos.stockMovements;",
+    "#   stock V001 mueve las tablas de stock a su schema: va despues de sales V025.",
+    "#   sales V032 y utilities V026 mueven actividades y paridades desde articulos: van despues de articulos 17+.",
+    "#   sales V033 mueve customerCategories y customerReferences desde utilities: va despues de utilities 1-25.",
+    "#   gastos V001 mueve las planillas de rendicion (Gastos de viajes) desde utilities: va al final.",
     "# access_control vive en plataforma (unificada en la Fase 1): articulos V012 se aplica ahi y su gemela",
     "# seguridad V023 (copia de la epoca database-per-service) no se ejecuta.",
     "# No se ejecutan las migraciones de DATOS del negocio: los datos los carga el sync desde Access.",
@@ -91,7 +95,10 @@ $lines = @(
 $dataSeeds = @('articulos|14', 'articulos|15', 'utilities|20', 'sales|21', 'sales|23')
 $plan = @(
     @('settings', 1, 97), @('seguridad', 1, 999), @('articulos', 1, 16), @('precios', 1, 999),
-    @('utilities', 1, 999), @('settings', 98, 999), @('sales', 1, 24), @('articulos', 17, 999), @('sales', 25, 999)
+    @('utilities', 1, 25), @('settings', 98, 999), @('sales', 1, 24), @('articulos', 17, 999), @('sales', 25, 999),
+    @('utilities', 26, 999),
+    @('stock', 1, 999),
+    @('gastos', 1, 999)
 )
 $count = 0
 foreach ($p in $plan) {

@@ -42,7 +42,7 @@ Get-ChildItem -Recurse | Unblock-File
 
 La conexión se toma del `sync.yaml` instalado (`C:\Apps\LFSoft\tools\sync\config\sync.yaml`); si hace falta otra: `-DatabaseUrl "postgres://postgres:<clave>@localhost:5432/lfsoft_hidramic"`. Si la conexión apunta a una base que no se llama `lfsoft_hidramic`, el script se detiene.
 
-**Revisar en el paso 1** la advertencia de `search_path`: el `DATABASE_URL` del backend tiene que incluir `articulos,precios,sales,seguridad,settings,utilities,plataforma,public`. Si falta alguno, ese módulo da error 500.
+**Revisar en el paso 1** la advertencia de `search_path`: el `DATABASE_URL` del backend tiene que incluir `articulos,stock,precios,sales,seguridad,settings,utilities,gastos,plataforma,public`. Si falta alguno, ese módulo da error 500.
 
 ## Qué hace `Reset-LFSoft.ps1`
 

@@ -9,7 +9,7 @@ access:
   pk_type: date
 
 postgres:
-  schema: articulos
+  schema: utilities
   table: paridades
   pk: paridad_id
   business_key: paridad_fecha

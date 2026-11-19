@@ -1,4 +1,4 @@
-# Planillas de rendicion (PlanillasRendiciones.mdb) <-> utilities."expenseReports", con sus
+# Planillas de rendicion (PlanillasRendiciones.mdb) <-> gastos."expenseReports" (modulo Gastos de viajes), con sus
 # cuatro colecciones: Gastos, Destinos (tramos), HorasTrabajadas y DineroEntregado (anticipos).
 # Mapeo tomado de LFSoft-app/database/utilities/etl/02_transform.sql.
 #
@@ -25,7 +25,7 @@ access:
   pk_type: long
 
 postgres:
-  schema: utilities
+  schema: gastos
   table: expenseReports
   pk: expenseReport_id
   business_key: expenseReport_number

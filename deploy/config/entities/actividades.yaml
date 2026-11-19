@@ -1,4 +1,4 @@
-# Actividades (Utilidades.mdb) <-> articulos.actividades. Clave: Actividad_Codigo =
+# Actividades (Utilidades.mdb) <-> sales.actividades (LFSoft-app sales V032; antes articulos.actividades). Clave: Actividad_Codigo =
 # actividad_codigo (APRA01, APRB02...), el codigo con el que el negocio las nombra y con el que
 # los items de presupuesto resuelven su actividad. articulos V014 siembra las 30 del legacy;
 # el sync las completa y corrige.
@@ -17,7 +17,7 @@ access:
   pk_type: text
 
 postgres:
-  schema: articulos
+  schema: sales
   table: actividades
   pk: actividad_id
   business_key: actividad_codigo

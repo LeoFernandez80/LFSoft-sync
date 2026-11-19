@@ -525,7 +525,7 @@ children:
         transform: trim
         nullable: true
         lookup:
-          table: articulos.actividades
+          table: sales.actividades
           match: actividad_codigo
           select: actividad_id
 
@@ -534,7 +534,7 @@ children:
         type: string
         nullable: true
         lookup:
-          table: articulos.actividades
+          table: sales.actividades
           match: actividad_codigo
           select: actividad_descripcion
 

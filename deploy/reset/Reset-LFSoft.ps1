@@ -72,7 +72,7 @@ $ErrorActionPreference = "Stop"
 $pkg = $PSScriptRoot
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-$appSchemas = @('articulos', 'precios', 'sales', 'seguridad', 'settings', 'utilities', 'plataforma')
+$appSchemas = @('articulos', 'stock', 'precios', 'sales', 'seguridad', 'settings', 'utilities', 'gastos', 'plataforma')
 $tracking = 'public."lfsoft_schema_migrations"'
 
 New-Item -ItemType Directory -Force (Join-Path $pkg "logs") | Out-Null
@@ -279,7 +279,7 @@ if ($DesdeCargaInicial) {
     Write-Step "Retomando desde la carga inicial (-DesdeCargaInicial)"
     Write-Host "  No se hace backup ni se borra ni se migra: se reinstala el sync, se corre la carga inicial"
     Write-Host "  y se arrancan los servicios."
-    $appTables = Invoke-Sql "SELECT COUNT(*) FROM pg_tables WHERE schemaname IN ('articulos','sales','utilities','seguridad','settings','precios')" -Scalar
+    $appTables = Invoke-Sql "SELECT COUNT(*) FROM pg_tables WHERE schemaname IN ('articulos','stock','sales','utilities','gastos','seguridad','settings','precios')" -Scalar
     if ([int]$appTables -lt 50) { Write-Fail "La base no tiene las tablas de la app ($appTables): correr el reset completo, sin -DesdeCargaInicial." }
 } else {
 # ====================================================================================

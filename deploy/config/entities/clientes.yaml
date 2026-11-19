@@ -208,7 +208,7 @@ fields:
     nullable: true
     null_sentinels: ["0"]
     lookup:
-      table: utilities.customerCategories
+      table: sales.customerCategories
       match: customerCategory_legacyCode
       select: customerCategory_id
 
@@ -219,7 +219,7 @@ fields:
     nullable: true
     null_sentinels: ["0"]
     lookup:
-      table: utilities.customerReferences
+      table: sales.customerReferences
       match: customerReference_legacyCode
       select: customerReference_id
 

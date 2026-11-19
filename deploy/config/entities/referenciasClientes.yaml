@@ -1,4 +1,4 @@
-# Referencias de cliente (Clientes.mdb, Referencia1) -> utilities."customerReferences".
+# Referencias de cliente (Clientes.mdb, Referencia1) -> sales."customerReferences" (ex utilities, LFSoft-app sales V033).
 # Ida y vuelta. Las filas creadas en la app reciben codigo legacy (MAX + 1, generate_key).
 # Clave: Codigo = customerReference_legacyCode. La categoria se resuelve por su legacyCode,
 # por eso va despues de categoriasClientes.yaml.
@@ -13,7 +13,7 @@ access:
   pk_type: long
 
 postgres:
-  schema: utilities
+  schema: sales
   table: customerReferences
   pk: customerReference_id
   business_key: customerReference_legacyCode
@@ -38,7 +38,7 @@ fields:
     pg: customerReference_category_id
     type: int
     lookup:
-      table: utilities.customerCategories
+      table: sales.customerCategories
       match: customerCategory_legacyCode
       select: customerCategory_id
 

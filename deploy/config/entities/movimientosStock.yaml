@@ -1,4 +1,4 @@
-# Movimientos de stock (Articulo.mdb, Stock) <-> articulos."stockMovements" + "stockMovementLines".
+# Movimientos de stock (Articulo.mdb, Stock) <-> stock."stockMovements" + "stockMovementLines".
 # Sincronizador propio (internal/stock): los dos modelos no se corresponden campo a campo.
 #
 # - Legacy: una fila de Stock por linea, con la cabecera repetida y su propio Movimiento_Tipo
@@ -29,7 +29,7 @@ access:
   pk_type: long
 
 postgres:
-  schema: articulos
+  schema: stock
   table: stockMovements
   pk: stockMovement_id
   business_key: stockMovement_number

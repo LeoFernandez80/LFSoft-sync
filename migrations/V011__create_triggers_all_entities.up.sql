@@ -32,10 +32,8 @@ CREATE TRIGGER trg_impuestos_sync
     AFTER INSERT OR UPDATE OR DELETE ON articulos."impuestosInternos"
     FOR EACH ROW EXECUTE FUNCTION sync.notify_change('impuestos', 'impuestoInterno_id');
 
-DROP TRIGGER IF EXISTS trg_actividades_sync ON articulos.actividades;
-CREATE TRIGGER trg_actividades_sync
-    AFTER INSERT OR UPDATE OR DELETE ON articulos.actividades
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_change('actividades', 'actividad_id');
+-- Actividades: its trigger lives in V016, created on whichever schema holds the table
+-- (articulos before LFSoft-app sales V032, sales afterwards).
 
 DROP TRIGGER IF EXISTS trg_posicionesArancelarias_sync ON articulos."posicionesArancelarias";
 CREATE TRIGGER trg_posicionesArancelarias_sync
@@ -59,28 +57,5 @@ CREATE TRIGGER trg_provinces_sync
     AFTER INSERT OR UPDATE OR DELETE ON utilities.provinces
     FOR EACH ROW EXECUTE FUNCTION sync.notify_change('provinces', 'province_id');
 
--- Expense reports: the whole document is written back, so every line table queues its root.
-DROP TRIGGER IF EXISTS trg_expenseReports_sync ON utilities."expenseReports";
-CREATE TRIGGER trg_expenseReports_sync
-    AFTER INSERT OR UPDATE OR DELETE ON utilities."expenseReports"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_change('expenseReports', 'expenseReport_id');
-
-DROP TRIGGER IF EXISTS trg_expenseReportExpenses_sync ON utilities."expenseReportExpenses";
-CREATE TRIGGER trg_expenseReportExpenses_sync
-    AFTER INSERT OR UPDATE OR DELETE ON utilities."expenseReportExpenses"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_document_change('expenseReports', 'expenseReportExpense_expenseReport_id');
-
-DROP TRIGGER IF EXISTS trg_expenseReportTrips_sync ON utilities."expenseReportTrips";
-CREATE TRIGGER trg_expenseReportTrips_sync
-    AFTER INSERT OR UPDATE OR DELETE ON utilities."expenseReportTrips"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_document_change('expenseReports', 'expenseReportTrip_expenseReport_id');
-
-DROP TRIGGER IF EXISTS trg_expenseReportWorkedHours_sync ON utilities."expenseReportWorkedHours";
-CREATE TRIGGER trg_expenseReportWorkedHours_sync
-    AFTER INSERT OR UPDATE OR DELETE ON utilities."expenseReportWorkedHours"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_document_change('expenseReports', 'expenseReportWorkedHour_expenseReport_id');
-
-DROP TRIGGER IF EXISTS trg_expenseReportAdvances_sync ON utilities."expenseReportAdvances";
-CREATE TRIGGER trg_expenseReportAdvances_sync
-    AFTER INSERT OR UPDATE OR DELETE ON utilities."expenseReportAdvances"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_document_change('expenseReports', 'expenseReportAdvance_expenseReport_id');
+-- Expense reports (module "Gastos de viajes"): their triggers live in V018, created on whichever
+-- schema holds the tables (utilities before LFSoft-app gastos V001, gastos afterwards).

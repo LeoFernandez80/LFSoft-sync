@@ -32,15 +32,10 @@ CREATE TRIGGER trg_localities_sync
     FOR EACH ROW EXECUTE FUNCTION sync.notify_document_change('localities', 'locality_country_id');
 
 -- Customer catalogs.
-DROP TRIGGER IF EXISTS trg_customerCategories_sync ON utilities."customerCategories";
-CREATE TRIGGER trg_customerCategories_sync
-    AFTER INSERT OR UPDATE OR DELETE ON utilities."customerCategories"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_change('customerCategories', 'customerCategory_id');
-
-DROP TRIGGER IF EXISTS trg_customerReferences_sync ON utilities."customerReferences";
-CREATE TRIGGER trg_customerReferences_sync
-    AFTER INSERT OR UPDATE OR DELETE ON utilities."customerReferences"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_change('customerReferences', 'customerReference_id');
+-- customerCategories, customerReferences: their triggers live in V017, which creates them on
+-- whichever schema holds the tables (utilities in bases older than LFSoft-app sales V033,
+-- sales afterwards). Bases where this migration already ran keep the triggers: they travel
+-- with the table on ALTER TABLE ... SET SCHEMA.
 
 DROP TRIGGER IF EXISTS trg_iibbConditions_sync ON utilities."iibbConditions";
 CREATE TRIGGER trg_iibbConditions_sync
@@ -76,21 +71,7 @@ CREATE TRIGGER trg_quoteItemWithdrawals_sync
     FOR EACH ROW EXECUTE FUNCTION sync.notify_document_change('quotes', 'quoteItemWithdrawal_quoteItem_id',
         'SELECT "quoteItem_quote_id" FROM sales."quoteItems" WHERE "quoteItem_id" = $1');
 
--- Stock inventories (whole document).
-DROP TRIGGER IF EXISTS trg_stockInventories_sync ON articulos."stockInventories";
-CREATE TRIGGER trg_stockInventories_sync
-    AFTER INSERT OR UPDATE OR DELETE ON articulos."stockInventories"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_change('stockInventories', 'stockInventory_id');
-
-DROP TRIGGER IF EXISTS trg_stockInventoryLines_sync ON articulos."stockInventoryLines";
-CREATE TRIGGER trg_stockInventoryLines_sync
-    AFTER INSERT OR UPDATE OR DELETE ON articulos."stockInventoryLines"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_document_change('stockInventories', 'stockInventoryLine_inventory_id');
-
--- Stock movements: only new movements travel (neither side edits a saved movement; the app
--- annuls with a new reversal movement). The lines are inserted in the same transaction, so
--- when the sync reads the queued header they are already there.
-DROP TRIGGER IF EXISTS trg_stockMovements_sync ON articulos."stockMovements";
-CREATE TRIGGER trg_stockMovements_sync
-    AFTER INSERT ON articulos."stockMovements"
-    FOR EACH ROW EXECUTE FUNCTION sync.notify_change('stockMovements', 'stockMovement_id');
+-- Stock inventories, stock movements: their triggers live in V015, which creates them on
+-- whichever schema holds the tables (articulos in bases older than LFSoft-app stock V001,
+-- stock afterwards). Bases where this migration already ran keep the triggers: they
+-- travel with the table on ALTER TABLE ... SET SCHEMA.

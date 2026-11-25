@@ -72,11 +72,12 @@ fields:
     null_sentinels: ["", " "]
     transform: trim
 
+  # Sin null_sentinels: Pais_Codigo 0 es ARGENTINA (ver paises.yaml), no "sin pais". Un codigo
+  # que no esta en utilities.countries queda NULL (nullable).
   - access: Pais_Codigo
     pg: customer_country_id
     type: int
     nullable: true
-    null_sentinels: ["0"]
     lookup:
       table: utilities.countries
       match: country_legacyCode
@@ -471,11 +472,11 @@ children:
         null_sentinels: ["", " "]
         transform: trim
 
+      # Sin null_sentinels: Pais_Codigo 0 es ARGENTINA (ver paises.yaml).
       - access: Pais_Codigo
         pg: subClient_country_id
         type: int
         nullable: true
-        null_sentinels: ["0"]
         lookup:
           table: utilities.countries
           match: country_legacyCode

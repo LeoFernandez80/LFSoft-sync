@@ -32,6 +32,25 @@ func TestDeployedEntities(t *testing.T) {
 			t.Errorf("%s: %v", filepath.Base(f), err)
 		}
 		checkKeysMapped(t, filepath.Base(f), ec.Children)
+		checkCountryLookups(t, filepath.Base(f), ec.Fields, ec.Children)
+	}
+}
+
+// Pais_Codigo 0 is ARGENTINA (paises.yaml): a "0" null sentinel on a country lookup leaves
+// every Argentine row without country (issue #8).
+func checkCountryLookups(t *testing.T, file string, fields []FieldMap, children []ChildConfig) {
+	for _, f := range fields {
+		if f.Lookup == nil || f.Lookup.Table != "utilities.countries" || f.Lookup.Match != "country_legacyCode" {
+			continue
+		}
+		for _, s := range f.NullSentinels {
+			if s == "0" {
+				t.Errorf("%s: %s -> %s: country code 0 (ARGENTINA) must not be a null sentinel", file, f.Access, f.PG)
+			}
+		}
+	}
+	for _, c := range children {
+		checkCountryLookups(t, file, c.Fields, c.Children)
 	}
 }
 

@@ -137,6 +137,39 @@ func TestReverseDedupesAndInverts(t *testing.T) {
 	}
 }
 
+// Pais_Codigo 0 is ARGENTINA, a real code: it must resolve and write back as 0 (issue #8).
+func TestCountryCodeZeroRoundTrip(t *testing.T) {
+	cfg := &config.EntityConfig{
+		Access: config.AccessConfig{PK: "Cliente_Codigo"},
+		Fields: []config.FieldMap{
+			{Access: "Cliente_Codigo", PG: "customer_legacyCode", Type: "int"},
+			{Access: "Pais_Codigo", PG: "customer_country_id", Type: "int", Nullable: true,
+				Lookup: &config.Lookup{Table: "utilities.countries", Match: "country_legacyCode", Select: "country_id"}},
+		},
+	}
+	lk := &fakeLookup{table: map[string]interface{}{"|0": int32(1), "|5": int32(6)}}
+
+	fw := NewForward(cfg).With(Resolvers{Lookup: lk})
+	for code, want := range map[uint8]interface{}{0: int32(1), 5: int32(6), 99: nil} {
+		mr, err := fw.Map(reader.Row{"Cliente_Codigo": int32(10), "Pais_Codigo": code})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := valueOf(t, mr, "customer_country_id"); got != want {
+			t.Errorf("Pais_Codigo %d -> %#v, want %#v", code, got, want)
+		}
+	}
+
+	rv := NewReverse(cfg).With(Resolvers{Lookup: lk})
+	am, err := rv.Map(reader.Row{"customer_legacyCode": int32(10), "customer_country_id": int32(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := am.Value("Pais_Codigo"); toString(v) != "0" {
+		t.Errorf("reverse Pais_Codigo = %#v, want 0", v)
+	}
+}
+
 // queryLookup answers query lookups by query text + args.
 type queryLookup map[string]interface{}
 
